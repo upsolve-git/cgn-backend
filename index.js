@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const createConnection =  require("./db.js")
@@ -10,6 +11,9 @@ const client = new OAuth2Client('YOUR_WEB_CLIENT_ID.apps.googleusercontent.com')
 
 const app = express();
 app.use(bodyParser.json());
+app.use(cors({
+  origin:'*'
+}));
 let db
 const jwtSecret = 'your_jwt_secret';
 async function performDatabaseOperations() {

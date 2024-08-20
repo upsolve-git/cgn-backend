@@ -10,7 +10,8 @@ const util = require('util');
 const client = new OAuth2Client('YOUR_WEB_CLIENT_ID.apps.googleusercontent.com');
 
 const app = express();
-app.use(bodyParser.json());
+app.use(express.json());
+app.use(bodyParser.urlencoded({extended:false}))
 app.use(cors({
   origin:'*'
 }));
@@ -26,26 +27,38 @@ async function performDatabaseOperations() {
 // `
 
 // const insertbestquery = 'INSERT INTO newSellers (product_id) VALUES (2)'
-//   db.query(insertbestquery, (err, results) => {
-//     if (err) {
-//       console.error('Error executing query:', err.stack);
-//       return;
-//     }
-//     console.log('Table created successfully:', results);
-//   });
+//   const createUsersTableQuery = `CREATE TABLE users (
+//     id INT AUTO_INCREMENT PRIMARY KEY,     -- Unique identifier for each user
+//     email VARCHAR(255) NOT NULL UNIQUE,    -- Email address (must be unique)
+//     password VARCHAR(255) NOT NULL,        -- Password (encrypted)
+//     accType ENUM('Business', 'Personal') NOT NULL, -- Account type (admin or user)
+//     firstName VARCHAR(100) NOT NULL,      -- First name
+//     lastName VARCHAR(100) NOT NULL,       -- Last name
+//     phone VARCHAR(15),                     -- Phone number
+//     countryCode VARCHAR(5),                -- Country code for phone number
+//     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Record creation timestamp
+//     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP -- Record update timestamp
+// );`
+  // db.query("Select * from users", (err, results) => {
+  //   if (err) {
+  //     console.error('Error executing query:', err.stack);
+  //     return;
+  //   }
+  //   console.log('Table created successfully:', results);
+  // });
 
 } 
 
 performDatabaseOperations().catch(err => console.error('Operation error:', err));
 
 app.post('/signup', async (req, res) => {
-  const { first_name, last_name, mobile, username, email, password, account_type } = req.body;
+  const { firstName, lastName, phone, email, password, accType, countryCode} = req.body;
   console.log(req.body)
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const sql = 'INSERT INTO users (username, email, password, first_name, last_name, mobile, account_type) VALUES (?, ?, ?, ?, ?, ?, ?)';
-    db.query(sql, [username, email, hashedPassword, first_name, last_name, mobile, account_type], (err, result) => {
+    const sql = 'INSERT INTO users (email, password, firstName, lastName, phone, accType, countryCode) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    db.query(sql, [email, hashedPassword, firstName, lastName, phone, accType, countryCode], (err, result) => {
       if (err) {
         console.error('Error inserting user:', err);
         return res.status(500).json({ message: 'Database error' });

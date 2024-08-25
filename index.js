@@ -9,7 +9,9 @@ const util = require('util');
 const multer = require('multer');
 const {saveFiletoBucket} = require('./s3.js')
 const path = require('path');
+const dotenv = require('dotenv') 
 
+dotenv.config()  
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {

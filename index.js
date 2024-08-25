@@ -6,6 +6,22 @@ const bodyParser = require('body-parser');
 const createConnection =  require("./db.js")
 const { OAuth2Client } = require('google-auth-library'); 
 const util = require('util');
+const multer = require('multer');
+const {saveFiletoBucket} = require('./s3.js')
+const path = require('path');
+
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/')
+    // console.log(req)
+  },
+  
+  filename: function (req, file, cb) {
+    cb(null, file.fieldname + '-' + Date.now()+path.extname(file.originalname))  }
+});
+
+const upload = multer({ storage: storage });
 
 const client = new OAuth2Client('YOUR_WEB_CLIENT_ID.apps.googleusercontent.com');
 
@@ -39,7 +55,7 @@ async function performDatabaseOperations() {
 //     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Record creation timestamp
 //     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP -- Record update timestamp
 // );`
-  // db.query("Select * from users", (err, results) => {
+  // db.query("select * from products", (err, results) => {
   //   if (err) {
   //     console.error('Error executing query:', err.stack);
   //     return;
@@ -214,6 +230,41 @@ app.get('/landingpage', async(req, res) => {
   return res.status(200).json({"bestSellers" : bestSellingProducts, "newSellers" : newproducts})
 })
 
+app.post('/addproduct', upload.single('image'), async(req, res) => {
+  const {name, product_type, description, price, discounted_price_percentage, available_sizes, category_id} = req.body
+  try {
+    const location = await saveFiletoBucket(req.file)
+    
+    const sql = 'INSERT INTO products (name, product_type, description, price, discounted_price_percentage, available_sizes, product_imgs_id, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+    db.query(sql, [name, product_type, description, price, discounted_price_percentage, available_sizes, location, category_id], (err, result) => {
+      if (err) {
+        console.error('Error inserting product:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'Product added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get('/products', async(req, res) => {
+  try {
+    const productDetailsQuery = 'SELECT * FROM products'; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(productDetailsQuery)
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error fetching products:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

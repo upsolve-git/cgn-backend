@@ -10,6 +10,8 @@ const multer = require('multer');
 const {saveFiletoBucket} = require('./s3.js')
 const path = require('path');
 const dotenv = require('dotenv') 
+const cookieParser = require('cookie-parser');
+const { generateToken, verifyAuth } = require('./auth.js');
 
 dotenv.config()  
 
@@ -31,10 +33,13 @@ const app = express();
 app.use(express.json());
 app.use(bodyParser.urlencoded({extended:false}))
 app.use(cors({
-  origin:'*'
+  origin: 'https://main.denxd9knzbms2.amplifyapp.com',
+  // origin: 'http://localhost:3000', 
+  credentials: true 
 }));
+app.use(cookieParser());
 let db
-const jwtSecret = 'your_jwt_secret';
+
 async function performDatabaseOperations() {
   db = await createConnection();
 //   const createTableQuery = `INSERT INTO Categories (category_name) VALUES ("test_category")`; 
@@ -56,8 +61,18 @@ async function performDatabaseOperations() {
 //     countryCode VARCHAR(5),                -- Country code for phone number
 //     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Record creation timestamp
 //     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP -- Record update timestamp
-// );`
-  // db.query("select * from products", (err, results) => {
+// );` 
+
+//   const createcartquery = `CREATE TABLE cart (
+//     product_id INT NOT NULL,
+//     image VARCHAR(255) NOT NULL,
+//     name VARCHAR(255) NOT NULL,
+//     price DECIMAL(10, 2) NOT NULL,
+//     quantity INT NOT NULL,
+//     user_id INT NOT NULL,
+//     PRIMARY KEY (product_id, user_id)
+// );` 
+  // db.query("SHOW tables", (err, results) => {
   //   if (err) {
   //     console.error('Error executing query:', err.stack);
   //     return;
@@ -68,6 +83,10 @@ async function performDatabaseOperations() {
 } 
 
 performDatabaseOperations().catch(err => console.error('Operation error:', err));
+
+app.get("/getauth", verifyAuth, (req, res) => {
+  return res.status(200).json({message: 'authenticated'})
+}) 
 
 app.post('/signup', async (req, res) => {
   const { firstName, lastName, phone, email, password, accType, countryCode} = req.body;
@@ -114,10 +133,30 @@ app.post('/login', (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
-    const token = jwt.sign({ id: user.id, username: user.username }, jwtSecret, { expiresIn: '1h' });
+    const token = generateToken(user.id, user.email);
+    console.log(token)
+    res.cookie('cgntoken', token, {
+      httpOnly: true,
+      secure: true, // Change to true if using HTTPS
+      sameSite: 'Strict',
+      maxAge: 3600000,
+      path: '/' // Ensure the cookie is set for all paths
+    });
 
-    res.status(200).json({ message: 'Login successful!', token });
+  res.status(200).json({ message: 'Login successful!' });
   });
+});
+
+app.post('/logout', (req, res) => {
+  console.log("in logout")
+  res.clearCookie('cgntoken', {
+    httpOnly: true, 
+    secure: true, // Change to true if using HTTPS
+    sameSite: 'Strict', 
+    path: '/' // Make sure this matches the path used when the cookie was set
+  });
+
+  res.status(200).json({ message: 'Logout successful, cookie cleared!' });
 });
 
 const authenticateToken = (req, res, next) => {
@@ -233,6 +272,7 @@ app.get('/landingpage', async(req, res) => {
 })
 
 app.post('/addproduct', upload.single('image'), async(req, res) => {
+  console.log("in prodcts add")
   const {name, product_type, description, price, discounted_price_percentage, available_sizes, category_id} = req.body
   try {
     const location = await saveFiletoBucket(req.file)
@@ -253,7 +293,21 @@ app.post('/addproduct', upload.single('image'), async(req, res) => {
 
 app.get('/products', async(req, res) => {
   try {
-    const productDetailsQuery = 'SELECT * FROM products'; 
+    const productDetailsQuery = `SELECT 
+    products.product_id, 
+    products.name, 
+    products.product_type, 
+    products.description, 
+    products.price, 
+    products.discounted_price_percentage,
+    products.product_imgs_id,
+    Categories.category_name
+FROM 
+    products
+INNER JOIN 
+    Categories 
+ON 
+    products.category_id = Categories.category_id;`; 
     let query = util.promisify(db.query).bind(db); 
     try {
       const result = await query(productDetailsQuery)
@@ -268,7 +322,190 @@ app.get('/products', async(req, res) => {
   }
 })
 
-const PORT = process.env.PORT || 3000;
+app.post('/addcategory', async(req, res) => {
+  const {category_name} = req.body
+  try {
+    const sql = 'INSERT INTO Categories (category_name) VALUES (?)';
+    db.query(sql, [category_name], (err, result) => {
+      if (err) {
+        console.error('Error inserting category:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'Category added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.get('/categories', async(req, res) => {
+  try {
+    const categoriesQuery = 'SELECT * FROM Categories'; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(categoriesQuery)
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error fetching categories:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.post('/addbestseller', async(req, res) => {
+  const {product_id} = req.body
+  try {
+    const sql = 'INSERT INTO bestSellers (product_id) VALUES (?)';
+    db.query(sql, [product_id], (err, result) => {
+      if (err) {
+        console.error('Error inserting bestseller:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.post('/deletebestseller', async(req, res) => {
+  const {product_id} = req.body
+  try {
+    const sql = 'INSERT INTO bestSellers (product_id) VALUES (?)';
+    db.query(sql, [product_id], (err, result) => {
+      if (err) {
+        console.error('Error inserting bestseller:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.post('/addnewseller', async(req, res) => {
+  const {product_id} = req.body
+  try {
+    const sql = 'INSERT INTO newSellers (product_id) VALUES (?)';
+    db.query(sql, [product_id], (err, result) => {
+      if (err) {
+        console.error('Error inserting newseller:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.post('/deletenewseller', async(req, res) => {
+  const {product_id} = req.body
+  try {
+    const sql = 'INSERT INTO newSellers (product_id) VALUES (?)';
+    db.query(sql, [product_id], (err, result) => {
+      if (err) {
+        console.error('Error inserting newseller:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get('/users', async(req, res) => {
+  try {
+    const categoriesQuery = 'SELECT * FROM users'; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(categoriesQuery)
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error fetching users:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.get('/getcart/:id', verifyAuth, async(req, res) => {
+  try {
+    const {id} = req.params
+    const cartQuery = 'SELECT * FROM cart where user_id=?'; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(cartQuery,[req.user.id])
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error fetching cart:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.post('/updateCart', verifyAuth, async(req, res) => {
+  const {product_id, image, name, price, quantity, user_id} = req.body
+  try {
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const checkquery = 'SELECT * FROM cart where user_id=? and product_id=?';
+      const result = await query(checkquery,[req.user.id, product_id])
+      console.log(result)
+      if(result.length == 0) {
+        const updatequery = 'INSERT INTO cart(user_id, product_id, image, name, price, quantity) VALUES(?, ?, ?, ?, ?, ?)'
+        const result = await query(updatequery, [req.user.id, product_id, image, name, price, quantity]);
+        res.status(200)
+      } else {
+        const updateQuery = 'UPDATE cart SET quantity = ? WHERE user_id = ? AND product_id = ?';
+        const result = await query(updateQuery, [quantity, req.user.id, product_id]);
+        res.status(200)
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch(error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.post('/deletefromcart', verifyAuth, async(req, res) => {
+  try {
+    console.log("in delete cart")
+    const {product_id, user_id} = req.body
+    const deleteQuery = 'DELETE FROM cart WHERE user_id = ? AND product_id = ?';
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(deleteQuery,[req.user.id, product_id])
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error deleting in cart:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });

@@ -37,7 +37,7 @@ function saveFiletoBucket(file) {
         });
 
         console.log("successfully saved to s3");
-        resolve(uploadData.key);  // Resolve the promise with the S3 file location
+        resolve(uploadData.Location);  // Resolve the promise with the S3 file location
       });
     });
   });

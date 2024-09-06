@@ -140,7 +140,7 @@ app.post('/login', (req, res) => {
       secure: true, // Change to true if using HTTPS
       sameSite: 'Lax',
       maxAge: 3600000,
-      domain: '.amplifyapp.com',
+      domain: '.denxd9knzbms2.amplifyapp.com',
       path: '/' // Ensure the cookie is set for all paths
     });
 

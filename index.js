@@ -138,9 +138,8 @@ app.post('/login', (req, res) => {
     res.cookie('cgntoken', token, {
       httpOnly: true,
       secure: true, // Change to true if using HTTPS
-      sameSite: 'Lax',
+      sameSite: 'None',
       maxAge: 3600000,
-      domain: '.denxd9knzbms2.amplifyapp.com',
       path: '/' // Ensure the cookie is set for all paths
     });
 
@@ -153,7 +152,7 @@ app.post('/logout', (req, res) => {
   res.clearCookie('cgntoken', {
     httpOnly: true, 
     secure: true, // Change to true if using HTTPS
-    sameSite: 'Lax', 
+    sameSite: 'None', 
     path: '/' // Make sure this matches the path used when the cookie was set
   });
 

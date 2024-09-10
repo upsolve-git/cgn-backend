@@ -2,7 +2,7 @@ const {s3} = require('./config.js');
 const fs = require('fs');
 
 
-function saveFiletoBucket(file) {
+function saveFiletoBucket(file, product_id, id) {
   return new Promise((resolve, reject) => {
     // Read file from the local filesystem
     fs.readFile(file.path, (err, data) => {
@@ -14,7 +14,7 @@ function saveFiletoBucket(file) {
       // Set up S3 upload parameters
       const params = {
         Bucket: 'cgnproductuploads',
-        Key: "product_" + String(Date.now()) + ".png",
+        Key: "product/" + String(product_id) + "/" + String(id) + ".png",
         Body: data
       };
 

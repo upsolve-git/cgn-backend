@@ -13,19 +13,18 @@ const dotenv = require('dotenv')
 const cookieParser = require('cookie-parser');
 const { generateToken, verifyAuth } = require('./auth.js');
 
-dotenv.config()  
+dotenv.config()
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, 'uploads/')
-    // console.log(req)
   },
-  
   filename: function (req, file, cb) {
-    cb(null, file.fieldname + '-' + Date.now()+path.extname(file.originalname))  }
+    cb(null, file.fieldname + '-' + Date.now()+path.extname(file.originalname))
+  }
 });
 
-const upload = multer({ storage: storage });
+const upload = multer({ storage: storage }).array('files', 10);
 
 const client = new OAuth2Client('YOUR_WEB_CLIENT_ID.apps.googleusercontent.com');
 
@@ -33,8 +32,8 @@ const app = express();
 app.use(express.json());
 app.use(bodyParser.urlencoded({extended:false}))
 app.use(cors({
-  origin: 'https://main.denxd9knzbms2.amplifyapp.com',
-  // origin: 'http://localhost:3000', 
+  // origin: 'https://main.denxd9knzbms2.amplifyapp.com',
+  origin: 'http://localhost:3000', 
   credentials: true 
 }));
 app.use(cookieParser());
@@ -42,44 +41,6 @@ let db
 
 async function performDatabaseOperations() {
   db = await createConnection();
-//   const createTableQuery = `INSERT INTO Categories (category_name) VALUES ("test_category")`; 
-//   const insertproductsquery = `INSERT INTO products 
-// ( name, product_type, description, price, discounted_price_percentage, available_sizes, product_imgs_id, category_id)
-// VALUES 
-// ( 'your_name3', 'your_product_type', 'your_description', 20, 10.0, 'your_available_sizes', 'your_product_imgs_id', 1);
-// `
-
-// const insertbestquery = 'INSERT INTO newSellers (product_id) VALUES (2)'
-//   const createUsersTableQuery = `CREATE TABLE users (
-//     id INT AUTO_INCREMENT PRIMARY KEY,     -- Unique identifier for each user
-//     email VARCHAR(255) NOT NULL UNIQUE,    -- Email address (must be unique)
-//     password VARCHAR(255) NOT NULL,        -- Password (encrypted)
-//     accType ENUM('Business', 'Personal') NOT NULL, -- Account type (admin or user)
-//     firstName VARCHAR(100) NOT NULL,      -- First name
-//     lastName VARCHAR(100) NOT NULL,       -- Last name
-//     phone VARCHAR(15),                     -- Phone number
-//     countryCode VARCHAR(5),                -- Country code for phone number
-//     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- Record creation timestamp
-//     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP -- Record update timestamp
-// );` 
-
-//   const createcartquery = `CREATE TABLE cart (
-//     product_id INT NOT NULL,
-//     image VARCHAR(255) NOT NULL,
-//     name VARCHAR(255) NOT NULL,
-//     price DECIMAL(10, 2) NOT NULL,
-//     quantity INT NOT NULL,
-//     user_id INT NOT NULL,
-//     PRIMARY KEY (product_id, user_id)
-// );` 
-  // db.query("SHOW tables", (err, results) => {
-  //   if (err) {
-  //     console.error('Error executing query:', err.stack);
-  //     return;
-  //   }
-  //   console.log('Table created successfully:', results);
-  // });
-
 } 
 
 performDatabaseOperations().catch(err => console.error('Operation error:', err));
@@ -94,7 +55,7 @@ app.post('/signup', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    const sql = 'INSERT INTO users (email, password, firstName, lastName, phone, accType, countryCode) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    const sql = 'INSERT INTO Users (email, password, first_name, last_name, phone, account_type, country_code) VALUES (?, ?, ?, ?, ?, ?, ?)';
     db.query(sql, [email, hashedPassword, firstName, lastName, phone, accType, countryCode], (err, result) => {
       if (err) {
         console.error('Error inserting user:', err);
@@ -115,7 +76,7 @@ app.post('/login', (req, res) => {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
-  const sql = 'SELECT * FROM users WHERE email = ?';
+  const sql = 'SELECT * FROM Users WHERE email = ?';
   db.query(sql, [email], async (err, results) => {
     if (err) {
       console.error('Error finding user:', err);
@@ -157,26 +118,6 @@ app.post('/logout', (req, res) => {
   });
 
   res.status(200).json({ message: 'Logout successful, cookie cleared!' });
-});
-
-const authenticateToken = (req, res, next) => {
-  const token = req.header('Authorization')?.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ message: 'Access denied. No token provided.' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, jwtSecret);
-    req.user = decoded;
-    next();
-  } catch (error) {
-    res.status(400).json({ message: 'Invalid token.' });
-  }
-};
-
-app.get('/profile', authenticateToken, (req, res) => {
-  res.json({ message: `Welcome ${req.user.username}! This is your profile.` });
 });
 
 app.post('/auth/google', async (req, res) => {
@@ -271,43 +212,105 @@ app.get('/landingpage', async(req, res) => {
   return res.status(200).json({"bestSellers" : bestSellingProducts, "newSellers" : newproducts})
 })
 
-app.post('/addproduct', upload.single('image'), async(req, res) => {
-  console.log("in prodcts add")
-  const {name, product_type, description, price, discounted_price_percentage, available_sizes, category_id} = req.body
-  try {
-    const location = await saveFiletoBucket(req.file)
-    
-    const sql = 'INSERT INTO products (name, product_type, description, price, discounted_price_percentage, available_sizes, product_imgs_id, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-    db.query(sql, [name, product_type, description, price, discounted_price_percentage, available_sizes, location, category_id], (err, result) => {
-      if (err) {
-        console.error('Error inserting product:', err);
-        return res.status(500).json({ message: 'Database error' });
+app.post('/addproduct', async(req, res) => { 
+  upload(req, res, async function (err) {
+    if (err instanceof multer.MulterError) {
+      return res.status(500).json({message : "error in uploading files"})
+    } else if (err) {
+      return res.status(500).json({message : "error in uploading files"})
+    } 
+
+    console.log("Adding New product")
+    const {name, product_type, description, price, discounted_price, category_id, color, shade, HEXCode} = req.body
+    try {
+      let query = util.promisify(db.query).bind(db); 
+      const productsql = 'INSERT INTO Products (name, product_type, description, price, discounted_price, category_id) VALUES (?, ?, ?, ?, ?, ?)';
+      const addProductResult = await query(productsql, [name, product_type, description, price, discounted_price, category_id]); 
+
+      if (addProductResult.affectedRows == 0) {
+        console.log("failed in adding product")
+        res.status(500).json({ message: 'Failed to add product' });
+        return; 
+      } 
+
+      const product_id = addProductResult.insertId
+      const colors = color.split(',').map(item => item.trim()); 
+      const shades = shade.split(',').map(item => item.trim());
+      const HEXCodes = HEXCode.split(',').map(item => item.trim());
+      let colors_id = []
+
+      for (let i = 0; i < colors.length; i++) {
+        const checkColorsSql = 'Select * from Colors where color_name = ? and shade_name = ? and code = ?'
+        const checkcolorresult = await query(checkColorsSql, [colors[i], shades[i], HEXCode[i]]) 
+        if(checkcolorresult.length > 0) {
+          colors_id.push(checkcolorresult[0].color_id);
+        } else {
+          const colorsql = 'INSERT INTO Colors(color_name, shade_name, code) VALUES(?, ?, ?) IF NOT EXISTS'; 
+          const addcolorsqlresult = await query(colorsql, [colors[i], shades[i], HEXCode[i]]) 
+
+          if(addcolorsqlresult.affectedRows == 0) {
+            console.log("failed in adding colors")
+            res.status(500).json({ message: 'Failed to add product' });
+            return
+          } 
+          colors_id.push(addcolorsqlresult.insertId)
+        } 
       }
-      res.status(201).json({ message: 'Product added successfully!' });
-    });
-  } catch (error) {
-    console.log(error)
-    res.status(500).json({ message: 'Server error' });
-  }
+
+      for (let i =0; i< colors_id.length; i++) {
+        const productcolormappingquery = 'INSERT INTO ProductColorMappings(product_id, color_id) VALUES(?,?)' 
+        const result = await query(productcolormappingquery, [product_id, colors_id[i]]) 
+        if(result.affectedRows == 0) {
+          console.log("failed in mapping products")
+          res.status(500).json({ message: 'Failed to add product' });
+          return; 
+        } 
+      } 
+
+      const files = req.files
+      let locations = []
+      cnt = 1
+      files.forEach(file => {
+        const location = saveFiletoBucket(file, product_id, cnt)
+        locations.push(location)
+        cnt += 1
+      }) 
+
+      for (let i = 0; i< locations.length; i++) {
+        const productimagesquery = "INSERT INTO ProductImages(product_id, image) VALUES(?,?)" 
+        const result = await query(productimagesquery, [product_id, locations[i]]) 
+        if(result.affectedRows == 0) {
+          console.log("failed in storing product images")
+          res.status(500).json({ message: 'Failed to add product' });
+          return; 
+        } 
+      }
+
+      res.status(200).json({message : "added product"})
+    } catch (error) {
+      console.log(error)
+      res.status(500).json({ message: 'Server error' });
+    }
+  });
+
 })
 
 app.get('/products', async(req, res) => {
   try {
     const productDetailsQuery = `SELECT 
-    products.product_id, 
-    products.name, 
-    products.product_type, 
-    products.description, 
-    products.price, 
-    products.discounted_price_percentage,
-    products.product_imgs_id,
+    Products.product_id, 
+    Products.name, 
+    Products.product_type, 
+    Products.description, 
+    Products.price, 
+    Products.discounted_price,
     Categories.category_name
 FROM 
-    products
+    Products
 INNER JOIN 
     Categories 
 ON 
-    products.category_id = Categories.category_id;`; 
+    Products.category_id = Categories.category_id;`; 
     let query = util.promisify(db.query).bind(db); 
     try {
       const result = await query(productDetailsQuery)
@@ -359,7 +362,7 @@ app.get('/categories', async(req, res) => {
 app.post('/addbestseller', async(req, res) => {
   const {product_id} = req.body
   try {
-    const sql = 'INSERT INTO bestSellers (product_id) VALUES (?)';
+    const sql = 'INSERT INTO BestSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error inserting bestseller:', err);
@@ -376,7 +379,7 @@ app.post('/addbestseller', async(req, res) => {
 app.post('/deletebestseller', async(req, res) => {
   const {product_id} = req.body
   try {
-    const sql = 'INSERT INTO bestSellers (product_id) VALUES (?)';
+    const sql = 'INSERT INTO BestSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error inserting bestseller:', err);
@@ -393,7 +396,7 @@ app.post('/deletebestseller', async(req, res) => {
 app.post('/addnewseller', async(req, res) => {
   const {product_id} = req.body
   try {
-    const sql = 'INSERT INTO newSellers (product_id) VALUES (?)';
+    const sql = 'INSERT INTO NewSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error inserting newseller:', err);
@@ -410,7 +413,7 @@ app.post('/addnewseller', async(req, res) => {
 app.post('/deletenewseller', async(req, res) => {
   const {product_id} = req.body
   try {
-    const sql = 'INSERT INTO newSellers (product_id) VALUES (?)';
+    const sql = 'INSERT INTO NewSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error inserting newseller:', err);
@@ -426,7 +429,7 @@ app.post('/deletenewseller', async(req, res) => {
 
 app.get('/users', async(req, res) => {
   try {
-    const categoriesQuery = 'SELECT * FROM users'; 
+    const categoriesQuery = 'SELECT * FROM Users'; 
     let query = util.promisify(db.query).bind(db); 
     try {
       const result = await query(categoriesQuery)
@@ -441,10 +444,9 @@ app.get('/users', async(req, res) => {
   }
 }) 
 
-app.get('/getcart/:id', verifyAuth, async(req, res) => {
+app.get('/getcart', verifyAuth, async(req, res) => {
   try {
-    const {id} = req.params
-    const cartQuery = 'SELECT * FROM cart where user_id=?'; 
+    const cartQuery = 'SELECT * FROM CartItems where user_id=?'; 
     let query = util.promisify(db.query).bind(db); 
     try {
       const result = await query(cartQuery,[req.user.id])
@@ -464,15 +466,15 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
   try {
     let query = util.promisify(db.query).bind(db); 
     try {
-      const checkquery = 'SELECT * FROM cart where user_id=? and product_id=?';
+      const checkquery = 'SELECT * FROM CartItems where user_id=? and product_id=?';
       const result = await query(checkquery,[req.user.id, product_id])
       console.log(result)
       if(result.length == 0) {
-        const updatequery = 'INSERT INTO cart(user_id, product_id, image, name, price, quantity) VALUES(?, ?, ?, ?, ?, ?)'
-        const result = await query(updatequery, [req.user.id, product_id, image, name, price, quantity]);
+        const updatequery = 'INSERT INTO CartItems(user_id, product_id, quantity) VALUES(?, ?, ?)'
+        const result = await query(updatequery, [req.user.id, product_id, quantity]);
         res.status(200)
       } else {
-        const updateQuery = 'UPDATE cart SET quantity = ? WHERE user_id = ? AND product_id = ?';
+        const updateQuery = 'UPDATE CartItems SET quantity = ? WHERE user_id = ? AND product_id = ?';
         const result = await query(updateQuery, [quantity, req.user.id, product_id]);
         res.status(200)
       }
@@ -509,3 +511,4 @@ const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
+//get products and get cartitems 

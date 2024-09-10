@@ -441,9 +441,8 @@ app.get('/users', async(req, res) => {
   }
 }) 
 
-app.get('/getcart/:id', verifyAuth, async(req, res) => {
+app.get('/getcart', verifyAuth, async(req, res) => {
   try {
-    const {id} = req.params
     const cartQuery = 'SELECT * FROM cart where user_id=?'; 
     let query = util.promisify(db.query).bind(db); 
     try {

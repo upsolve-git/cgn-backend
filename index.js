@@ -33,8 +33,7 @@ const app = express();
 app.use(express.json());
 app.use(bodyParser.urlencoded({extended:false}))
 app.use(cors({
-  origin: 'https://canadiangelnails.com',
-  origin: 'https://main.denxd9knzbms2.amplifyapp.com',
+  origin: 'https://www.canadiangelnails.com',
   // origin: 'http://localhost:3000', 
   credentials: true 
 }));

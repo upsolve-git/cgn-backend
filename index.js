@@ -277,8 +277,8 @@ app.post('/addproduct', upload.single('image'), async(req, res) => {
   try {
     const location = await saveFiletoBucket(req.file)
     
-    const sql = 'INSERT INTO products (name, product_type, description, price, discounted_price_percentage, available_sizes, product_imgs_id, category_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
-    db.query(sql, [name, product_type, description, price, discounted_price_percentage, available_sizes, location, category_id], (err, result) => {
+    const sql = 'INSERT INTO products (name, product_type, description, price, discounted_price_percentage, product_imgs_id, category_id) VALUES (?, ?, ?, ?, ?, ?, ?)';
+    db.query(sql, [name, product_type, description, price, discounted_price_percentage, location, category_id], (err, result) => {
       if (err) {
         console.error('Error inserting product:', err);
         return res.status(500).json({ message: 'Database error' });

@@ -34,7 +34,7 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({extended:false}))
 app.use(cors({
   origin: 'https://www.canadiangelnails.com',
-  origin: 'http://localhost:3000', 
+  // origin: 'http://localhost:3000', 
   credentials: true 
 }));
 app.use(cookieParser());
@@ -133,7 +133,7 @@ app.post('/login', (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
-    const token = generateToken(user.id, user.email);
+    const token = generateToken(user.user_id, user.email);
     console.log(token)
     res.cookie('cgntoken', token, {
       httpOnly: true,

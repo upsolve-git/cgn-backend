@@ -1,10 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const cors = require('cors');
-const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
 const createConnection =  require("./db.js")
-const { OAuth2Client } = require('google-auth-library'); 
 const util = require('util');
 const multer = require('multer');
 const {saveFiletoBucket} = require('./s3.js')
@@ -24,13 +22,12 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage: storage }).array('files', 10);
-
-const client = new OAuth2Client('YOUR_WEB_CLIENT_ID.apps.googleusercontent.com');
+const upload = multer({ storage: storage }).array('images', 10);
 
 const app = express();
 app.use(express.json());
 app.use(bodyParser.urlencoded({extended:false}))
+app.use(express.json());
 
 const allowedOrigins = ['https://www.canadiangelnails.com', 'http://localhost:3000'];
 
@@ -131,42 +128,46 @@ app.post('/logout', (req, res) => {
 });
 
 app.post('/auth/google', async (req, res) => {
-  const { token } = req.body;
+  const { email, first_name, last_name } = req.body;
 
   try {
-    // Verify the token using Google's OAuth2Client
-    const ticket = await client.verifyIdToken({
-      idToken: token,
-      audience: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com',
-    });
-    const payload = ticket.getPayload();
-
-    const { sub, email, name, picture } = payload;
-
-    // Check if user exists in the database
-    const sql = 'SELECT * FROM users WHERE google_id = ? OR email = ?';
-    db.query(sql, [sub, email], (err, results) => {
+    const sql = 'SELECT * FROM Users WHERE email = ?';
+    db.query(sql, [email], (err, results) => {
       if (err) {
         console.error('Error querying the database:', err);
         return res.status(500).json({ message: 'Database error' });
       }
 
       if (results.length > 0) {
-        // User exists, generate a JWT
         const user = results[0];
-        const token = jwt.sign({ id: user.id, email: user.email }, jwtSecret, { expiresIn: '1h' });
-        return res.status(200).json({ message: 'Login successful!', token });
+        const token = generateToken(user.user_id, user.email);
+        res.cookie('cgntoken', token, {
+          httpOnly: true,
+          secure: true, // Change to true if using HTTPS
+          sameSite: 'None',
+          maxAge: 3600000,
+          path: '/' // Ensure the cookie is set for all paths
+        });
+    
+      res.status(200).json({ message: 'Login successful!' });
       } else {
-        // User does not exist, create a new user
-        const insertSql = 'INSERT INTO users (google_id, email, name, profile_picture) VALUES (?, ?, ?, ?)';
-        db.query(insertSql, [sub, email, name, picture], (err, result) => {
+        const insertSql = 'INSERT INTO Users (email, first_name, last_name, account_type) VALUES (?, ?, ?, ?)';
+        db.query(insertSql, [email, first_name, last_name, "Personal"], (err, result) => {
           if (err) {
             console.error('Error inserting new user:', err);
             return res.status(500).json({ message: 'Database error' });
           }
 
-          const token = jwt.sign({ id: result.insertId, email: email }, jwtSecret, { expiresIn: '1h' });
-          res.status(201).json({ message: 'User registered and logged in!', token });
+          const token = generateToken(result.insertId, email);
+          res.cookie('cgntoken', token, {
+            httpOnly: true,
+            secure: true, // Change to true if using HTTPS
+            sameSite: 'None',
+            maxAge: 3600000,
+            path: '/' // Ensure the cookie is set for all paths
+          });
+      
+        res.status(200).json({ message: 'Login successful!' });
         });
       }
     });
@@ -224,6 +225,7 @@ app.get('/landingpage', async(req, res) => {
 
 app.post('/addproduct', async(req, res) => { 
   upload(req, res, async function (err) {
+    console.log("in add product")
     if (err instanceof multer.MulterError) {
       return res.status(500).json({message : "error in uploading files"})
     } else if (err) {
@@ -231,32 +233,43 @@ app.post('/addproduct', async(req, res) => {
     } 
 
     console.log("Adding New product")
-    const {name, product_type, description, price, discounted_price, category_id, color, shade, HEXCode} = req.body
+    console.log(req.body.colors)
+    const {name, product_type, description, price, discounted_price, discounted_business_price, category_ids, colors} = req.body
     try {
       let query = util.promisify(db.query).bind(db); 
-      const productsql = 'INSERT INTO Products (name, product_type, description, price, discounted_price, category_id) VALUES (?, ?, ?, ?, ?, ?)';
-      const addProductResult = await query(productsql, [name, product_type, description, price, discounted_price, category_id]); 
+      const productsql = 'INSERT INTO Products (name, product_type, description, price, discounted_price, discounted_business_price) VALUES (?, ?, ?, ?, ?, ?)';
+      const addProductResult = await query(productsql, [name, product_type, description, price, discounted_price, discounted_business_price]); 
 
       if (addProductResult.affectedRows == 0) {
         console.log("failed in adding product")
         res.status(500).json({ message: 'Failed to add product' });
         return; 
-      } 
+      }
 
       const product_id = addProductResult.insertId
-      const colors = color.split(',').map(item => item.trim()); 
-      const shades = shade.split(',').map(item => item.trim());
-      const HEXCodes = HEXCode.split(',').map(item => item.trim());
-      let colors_id = []
 
-      for (let i = 0; i < colors.length; i++) {
+      for (let i = 0; i<category_ids.length; i++) {
+        const addcategoryMapping = "INSERT INTO ProductCategoryMappings (category_id, product_id) VALUES(?, ?)";
+        const addcategoryMappingresult = await query(addcategoryMapping, [parseInt(category_ids[i] , 10), product_id]);
+        if (addcategoryMappingresult.affectedRows == 0) {
+          console.log("failed in adding product")
+          res.status(500).json({ message: 'Failed to add product' });
+          return; 
+        }
+      }
+
+      
+      let colors_id = []
+      let parsedColors = JSON.parse(colors)
+      for (const color of parsedColors) {
+        console.log("colors : ", color.code)
         const checkColorsSql = 'Select * from Colors where color_name = ? and shade_name = ? and code = ?'
-        const checkcolorresult = await query(checkColorsSql, [colors[i], shades[i], HEXCode[i]]) 
+        const checkcolorresult = await query(checkColorsSql, [color.color_name, color.shade_name, color.code]) 
         if(checkcolorresult.length > 0) {
           colors_id.push(checkcolorresult[0].color_id);
         } else {
-          const colorsql = 'INSERT INTO Colors(color_name, shade_name, code) VALUES(?, ?, ?) IF NOT EXISTS'; 
-          const addcolorsqlresult = await query(colorsql, [colors[i], shades[i], HEXCode[i]]) 
+          const colorsql = 'INSERT INTO Colors(color_name, shade_name, code) VALUES(?, ?, ?)'; 
+          const addcolorsqlresult = await query(colorsql, [color.color_name, color.shade_name, color.code]) 
 
           if(addcolorsqlresult.affectedRows == 0) {
             console.log("failed in adding colors")
@@ -278,14 +291,17 @@ app.post('/addproduct', async(req, res) => {
       } 
 
       const files = req.files
-      let locations = []
-      cnt = 1
-      files.forEach(file => {
-        const location = saveFiletoBucket(file, product_id, cnt)
-        locations.push(location)
-        cnt += 1
-      }) 
+      let locations = [];
+      let cnt = 1;
 
+      for (const file of files) {
+        const location = await saveFiletoBucket(file, product_id, cnt);
+        console.log("location :", location);
+        locations.push(location);
+        cnt += 1;
+      }
+
+      console.log(locations);
       for (let i = 0; i< locations.length; i++) {
         const productimagesquery = "INSERT INTO ProductImages(product_id, image) VALUES(?,?)" 
         const result = await query(productimagesquery, [product_id, locations[i]]) 
@@ -308,23 +324,51 @@ app.post('/addproduct', async(req, res) => {
 app.get('/products', async(req, res) => {
   try {
     const productDetailsQuery = `SELECT 
-    Products.product_id, 
-    Products.name, 
-    Products.product_type, 
-    Products.description, 
-    Products.price, 
-    Products.discounted_price,
-    Categories.category_name
-FROM 
-    Products
-INNER JOIN 
-    Categories 
-ON 
-    Products.category_id = Categories.category_id;`; 
+        p.product_id,
+        p.name,
+        p.product_type,
+        p.description,
+        p.price,
+        p.discounted_price,
+        p.discounted_business_price,
+        GROUP_CONCAT(DISTINCT c.category_name) AS categories,
+        GROUP_CONCAT(DISTINCT pi.image) AS images,
+        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code)) AS colors
+    FROM 
+        Products p
+    LEFT JOIN 
+        ProductCategoryMappings pcm ON p.product_id = pcm.product_id
+    LEFT JOIN 
+        Categories c ON pcm.category_id = c.category_id
+    LEFT JOIN 
+        ProductImages pi ON p.product_id = pi.product_id
+    LEFT JOIN 
+        ProductColorMappings pcm2 ON p.product_id = pcm2.product_id
+    LEFT JOIN 
+        Colors clr ON pcm2.color_id = clr.color_id
+    GROUP BY 
+        p.product_id;`; 
     let query = util.promisify(db.query).bind(db); 
     try {
-      const result = await query(productDetailsQuery)
-      res.status(200).json(result)
+      let rows = await query(productDetailsQuery)
+      let products = []
+      for (const row of rows) {
+        console.log(row.name)
+        products.push({
+          product_id: row.product_id,
+          name: row.name,
+          product_type: row.product_type,
+          description: row.description,
+          price: row.price,
+          discounted_price: row.discounted_price,
+          discounted_business_price: row.discounted_business_price,
+          categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
+          images: row.images ? row.images.split(',') : [],              // Convert comma-separated string to array
+          colors: row.colors                               // Colors already returned as JSON array
+        })
+      }
+      // const products = rows.foreach(row => ());
+      res.status(200).json(products)
     } catch (error) {
       console.error('Error fetching products:', error.stack);
       return res.status(500).json({ error: 'Internal Server Error' });
@@ -345,6 +389,23 @@ app.post('/addcategory', async(req, res) => {
         return res.status(500).json({ message: 'Database error' });
       }
       res.status(201).json({ message: 'Category added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
+app.post('/deletecategory', async(req, res) => {
+  const {category_id} = req.body
+  try {
+    const sql = 'DELETE from Categories where category_id = ?';
+    db.query(sql, [category_id], (err, result) => {
+      if (err) {
+        console.error('Error deleting category:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'Category deleted successfully!' });
     });
   } catch (error) {
     console.log(error)
@@ -389,13 +450,13 @@ app.post('/addbestseller', async(req, res) => {
 app.post('/deletebestseller', async(req, res) => {
   const {product_id} = req.body
   try {
-    const sql = 'INSERT INTO BestSellers (product_id) VALUES (?)';
+    const sql = 'DELETE from BestSellers where product_id = ?';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
-        console.error('Error inserting bestseller:', err);
+        console.error('Error deleting bestseller:', err);
         return res.status(500).json({ message: 'Database error' });
       }
-      res.status(201).json({ message: 'added successfully!' });
+      res.status(201).json({ message: 'deleted successfully!' });
     });
   } catch (error) {
     console.log(error)
@@ -423,7 +484,7 @@ app.post('/addnewseller', async(req, res) => {
 app.post('/deletenewseller', async(req, res) => {
   const {product_id} = req.body
   try {
-    const sql = 'INSERT INTO NewSellers (product_id) VALUES (?)';
+    const sql = 'DELETE from NewSellers where product_id = ?';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error inserting newseller:', err);
@@ -456,11 +517,40 @@ app.get('/users', async(req, res) => {
 
 app.get('/getcart', verifyAuth, async(req, res) => {
   try {
-    const cartQuery = 'SELECT * FROM CartItems where user_id=?'; 
+    const cartQuery = `SELECT 
+    ci.cart_item_id,
+    p.name AS product_name,
+    GROUP_CONCAT(DISTINCT pi.image) AS images,
+    p.price,
+    p.discounted_price,
+    p.discounted_business_price,
+    ci.quantity,
+    (ci.quantity * p.price) AS total_price
+FROM 
+    CartItems ci
+JOIN 
+    Products p ON ci.product_id = p.product_id
+LEFT JOIN 
+    ProductImages pi ON p.product_id = pi.product_id
+WHERE 
+    ci.user_id = ?
+GROUP BY 
+    ci.cart_item_id, p.product_id;
+`; 
     let query = util.promisify(db.query).bind(db); 
     try {
-      const result = await query(cartQuery,[req.user.id])
-      res.status(200).json(result)
+      const [rows] = await query(cartQuery,[req.user.id])
+      const cartItems = rows.map(row => ({
+        cart_item_id: row.cart_item_id,
+        product_name: row.product_name,
+        images: row.images ? row.images.split(',') : [],
+        price: row.price,
+        discounted_price: row.discounted_price,
+        discounted_business_price: row.discounted_business_price,
+        quantity: row.quantity,
+        total_price: row.total_price
+      }));
+      res.status(200).json(cartItems)
     } catch (error) {
       console.error('Error fetching cart:', error.stack);
       return res.status(500).json({ error: 'Internal Server Error' });
@@ -469,10 +559,10 @@ app.get('/getcart', verifyAuth, async(req, res) => {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
   }
-}) 
+})  
 
 app.post('/updateCart', verifyAuth, async(req, res) => {
-  const {product_id, image, name, price, quantity, user_id} = req.body
+  const {product_id, quantity} = req.body
   try {
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -501,7 +591,7 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
 app.post('/deletefromcart', verifyAuth, async(req, res) => {
   try {
     console.log("in delete cart")
-    const {product_id, user_id} = req.body
+    const {product_id} = req.body
     const deleteQuery = 'DELETE FROM cart WHERE user_id = ? AND product_id = ?';
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -517,8 +607,10 @@ app.post('/deletefromcart', verifyAuth, async(req, res) => {
   }
 }) 
 
+
+
+
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
 });
-//get products and get cartitems 

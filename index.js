@@ -333,7 +333,7 @@ app.get('/products', async(req, res) => {
         p.discounted_business_price,
         GROUP_CONCAT(DISTINCT c.category_name) AS categories,
         GROUP_CONCAT(DISTINCT pi.image) AS images,
-        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code)) AS colors
+        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
     FROM 
         Products p
     LEFT JOIN 
@@ -518,20 +518,23 @@ app.get('/users', async(req, res) => {
 app.get('/getcart', verifyAuth, async(req, res) => {
   try {
     const cartQuery = `SELECT 
-    ci.cart_item_id,
+    p.product_id,
     p.name AS product_name,
     GROUP_CONCAT(DISTINCT pi.image) AS images,
-    p.price,
     p.discounted_price,
     p.discounted_business_price,
     ci.quantity,
-    (ci.quantity * p.price) AS total_price
+    ci.total,
+    clr.shade_name,
+    clr.code
 FROM 
     CartItems ci
 JOIN 
     Products p ON ci.product_id = p.product_id
 LEFT JOIN 
     ProductImages pi ON p.product_id = pi.product_id
+LEFT JOIN
+    Colors clr ON ci.color_id = clr.color_id
 WHERE 
     ci.user_id = ?
 GROUP BY 
@@ -539,17 +542,21 @@ GROUP BY
 `; 
     let query = util.promisify(db.query).bind(db); 
     try {
-      const [rows] = await query(cartQuery,[req.user.id])
-      const cartItems = rows.map(row => ({
-        cart_item_id: row.cart_item_id,
-        product_name: row.product_name,
+      const rows = await query(cartQuery,[req.user.id])
+      let cartItems = []
+      for(const row of rows) {
+        cartItems.push({
+        product_id: row.product_id,
+        name: row.product_name,
         images: row.images ? row.images.split(',') : [],
-        price: row.price,
         discounted_price: row.discounted_price,
         discounted_business_price: row.discounted_business_price,
         quantity: row.quantity,
-        total_price: row.total_price
-      }));
+        total: row.total,
+        shade_name: row.shade_name,
+        code: row.code
+        })
+      }
       res.status(200).json(cartItems)
     } catch (error) {
       console.error('Error fetching cart:', error.stack);
@@ -562,20 +569,20 @@ GROUP BY
 })  
 
 app.post('/updateCart', verifyAuth, async(req, res) => {
-  const {product_id, quantity} = req.body
+  const {product_id, quantity, color_id} = req.body
   try {
     let query = util.promisify(db.query).bind(db); 
     try {
-      const checkquery = 'SELECT * FROM CartItems where user_id=? and product_id=?';
-      const result = await query(checkquery,[req.user.id, product_id])
+      const checkquery = 'SELECT * FROM CartItems where user_id=? and product_id=? and color_id=?';
+      const result = await query(checkquery,[req.user.id, product_id, color_id])
       console.log(result)
       if(result.length == 0) {
-        const updatequery = 'INSERT INTO CartItems(user_id, product_id, quantity) VALUES(?, ?, ?)'
-        const result = await query(updatequery, [req.user.id, product_id, quantity]);
+        const updatequery = 'INSERT INTO CartItems(user_id, product_id, quantity, color_id) VALUES(?, ?, ?, ?)'
+        const result = await query(updatequery, [req.user.id, product_id, quantity, color_id]);
         res.status(200)
       } else {
-        const updateQuery = 'UPDATE CartItems SET quantity = ? WHERE user_id = ? AND product_id = ?';
-        const result = await query(updateQuery, [quantity, req.user.id, product_id]);
+        const updateQuery = 'UPDATE CartItems SET quantity = ? WHERE user_id = ? AND product_id = ? AND color_id =?';
+        const result = await query(updateQuery, [quantity, req.user.id, product_id, color_id]);
         res.status(200)
       }
     } catch (error) {
@@ -591,11 +598,11 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
 app.post('/deletefromcart', verifyAuth, async(req, res) => {
   try {
     console.log("in delete cart")
-    const {product_id} = req.body
-    const deleteQuery = 'DELETE FROM cart WHERE user_id = ? AND product_id = ?';
+    const {product_id, color_id} = req.body
+    const deleteQuery = 'DELETE FROM cart WHERE user_id = ? AND product_id = ? AND color_id = ?';
     let query = util.promisify(db.query).bind(db); 
     try {
-      const result = await query(deleteQuery,[req.user.id, product_id])
+      const result = await query(deleteQuery,[req.user.id, product_id, color_id])
       res.status(200).json(result)
     } catch (error) {
       console.error('Error deleting in cart:', error.stack);

@@ -952,6 +952,39 @@ app.post('/capture',verifyAuth, async (req, res) => {
   }
 });
 
+app.post('/addreview', verifyAuth, async(req, res) => {
+  const {product_id, review, rating} = req.body
+  try {
+    const sql = 'INSERT INTO Reviews(user_id, product_id, review_content, review_stars) VALUES(?, ?, ?, ?)';
+    db.query(sql, [req.user.id, product_id, review, rating], (err, result) => {
+      if (err) {
+        console.error('Error inserting review:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get('/getreviews', verifyAuth, async(req, res) => {
+  const {product_id} = req.body
+  try {
+    const sql = 'SELECT * from Reviews WHERE product_id = ?';
+    db.query(sql, [product_id], (err, result) => {
+      if (err) {
+        console.error('Error getting reviews', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json(result);
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {

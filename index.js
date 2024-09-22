@@ -10,6 +10,8 @@ const path = require('path');
 const dotenv = require('dotenv') 
 const cookieParser = require('cookie-parser');
 const { generateToken, verifyAuth } = require('./auth.js');
+const paypal = require('@paypal/checkout-server-sdk');
+
 
 dotenv.config()
 
@@ -115,6 +117,45 @@ app.post('/login', (req, res) => {
   });
 });
 
+app.post('/adminlogin', (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Email and password are required.' });
+  }
+
+  const sql = 'SELECT * FROM Users WHERE email = ?';
+  db.query(sql, [email], async (err, results) => {
+    if (err) {
+      console.error('Error finding user:', err);
+      return res.status(500).json({ message: 'Database error' });
+    }
+
+    if (results.length === 0) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
+
+    const user = results[0];
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Invalid email or password.' });
+    }
+
+    const token = generateToken(user.user_id, user.email);
+    console.log(token)
+    res.cookie('cgntoken', token, {
+      httpOnly: true,
+      secure: true, // Change to true if using HTTPS
+      sameSite: 'None',
+      maxAge: 3600000,
+      path: '/' // Ensure the cookie is set for all paths
+    });
+
+  res.status(200).json({ message: 'Login successful!' });
+  });
+});
+
 app.post('/logout', (req, res) => {
   console.log("in logout")
   res.clearCookie('cgntoken', {
@@ -179,45 +220,116 @@ app.post('/auth/google', async (req, res) => {
 });
 
 app.get('/landingpage', async(req, res) => {
-  const bestSellingQuery = 'SELECT product_id FROM bestSellers';
-  let productIds; 
-  let bestSellingProducts;
-  let newproducts; 
-
-  let query = util.promisify(db.query).bind(db); 
+  let newproducts = []
+  let bestSellingProducts = []
   try {
-      const result = await query(bestSellingQuery)
-      productIds = result.map(row => row.product_id);
+    const bestSellerProductDetailsQuery = `SELECT 
+        p.product_id,
+        p.name,
+        p.product_type,
+        p.description,
+        p.price,
+        p.discounted_price,
+        p.discounted_business_price,
+        GROUP_CONCAT(DISTINCT c.category_name) AS categories,
+        GROUP_CONCAT(DISTINCT pi.image) AS images,
+        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
+    FROM 
+        Products p
+    JOIN
+        BestSellers bs ON p.product_id = bs.product_id
+    LEFT JOIN 
+        ProductCategoryMappings pcm ON p.product_id = pcm.product_id
+    LEFT JOIN 
+        Categories c ON pcm.category_id = c.category_id
+    LEFT JOIN 
+        ProductImages pi ON p.product_id = pi.product_id
+    LEFT JOIN 
+        ProductColorMappings pcm2 ON p.product_id = pcm2.product_id
+    LEFT JOIN 
+        Colors clr ON pcm2.color_id = clr.color_id
+    GROUP BY 
+        p.product_id;`; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      let rows = await query(bestSellerProductDetailsQuery)
+      for (const row of rows) {
+        console.log(row.name)
+        bestSellingProducts.push({
+          product_id: row.product_id,
+          name: row.name,
+          product_type: row.product_type,
+          description: row.description,
+          price: row.price,
+          discounted_price: row.discounted_price,
+          discounted_business_price: row.discounted_business_price,
+          categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
+          images: row.images ? row.images.split(',') : [],              // Convert comma-separated string to array
+          colors: row.colors                               // Colors already returned as JSON array
+        })
+      }
     } catch (error) {
-      console.error('Error fetching bestSellers products:', error.stack);
+      console.error('Error fetching products:', error.stack);
       return res.status(500).json({ error: 'Internal Server Error' });
     }
-  
-  const productDetailsQuery = 'SELECT * FROM products WHERE product_id IN (?)'; 
-
-  try {
-    const result = await query(productDetailsQuery, [productIds])
-    bestSellingProducts = result
   } catch (error) {
-    console.error('Error fetching bestSellers products:', error.stack);
-    return res.status(500).json({ error: 'Internal Server Error' });
-  }
-  const newSellingQuery = 'SELECT product_id FROM newSellers';
-
-  try {
-    const result = await query(newSellingQuery)
-    productIds = result.map(row => row.product_id);
-  } catch (error) {
-    console.error('Error fetching bestSellers products:', error.stack);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
   }
 
   try {
-    const result = await query(productDetailsQuery, [productIds])
-    newproducts = result
+    const newSellerProductDetailsQuery = `SELECT 
+        p.product_id,
+        p.name,
+        p.product_type,
+        p.description,
+        p.price,
+        p.discounted_price,
+        p.discounted_business_price,
+        GROUP_CONCAT(DISTINCT c.category_name) AS categories,
+        GROUP_CONCAT(DISTINCT pi.image) AS images,
+        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
+    FROM 
+        Products p
+    JOIN
+        NewSellers ns ON p.product_id = ns.product_id
+    LEFT JOIN 
+        ProductCategoryMappings pcm ON p.product_id = pcm.product_id
+    LEFT JOIN 
+        Categories c ON pcm.category_id = c.category_id
+    LEFT JOIN 
+        ProductImages pi ON p.product_id = pi.product_id
+    LEFT JOIN 
+        ProductColorMappings pcm2 ON p.product_id = pcm2.product_id
+    LEFT JOIN 
+        Colors clr ON pcm2.color_id = clr.color_id
+    GROUP BY 
+        p.product_id;`; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      let rows = await query(newSellerProductDetailsQuery)
+      for (const row of rows) {
+        console.log(row.name)
+        newproducts.push({
+          product_id: row.product_id,
+          name: row.name,
+          product_type: row.product_type,
+          description: row.description,
+          price: row.price,
+          discounted_price: row.discounted_price,
+          discounted_business_price: row.discounted_business_price,
+          categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
+          images: row.images ? row.images.split(',') : [],              // Convert comma-separated string to array
+          colors: row.colors                               // Colors already returned as JSON array
+        })
+      }
+    } catch (error) {
+      console.error('Error fetching products:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
   } catch (error) {
-    console.error('Error fetching bestSellers products:', error.stack);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
   }
 
   return res.status(200).json({"bestSellers" : bestSellingProducts, "newSellers" : newproducts})
@@ -526,7 +638,8 @@ app.get('/getcart', verifyAuth, async(req, res) => {
     ci.quantity,
     ci.total,
     clr.shade_name,
-    clr.code
+    clr.code,
+    clr.color_id
 FROM 
     CartItems ci
 JOIN 
@@ -554,7 +667,8 @@ GROUP BY
         quantity: row.quantity,
         total: row.total,
         shade_name: row.shade_name,
-        code: row.code
+        code: row.code,
+        color_id: row.color_id
         })
       }
       res.status(200).json(cartItems)
@@ -597,12 +711,14 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
 
 app.post('/deletefromcart', verifyAuth, async(req, res) => {
   try {
-    console.log("in delete cart")
-    const {product_id, color_id} = req.body
-    const deleteQuery = 'DELETE FROM cart WHERE user_id = ? AND product_id = ? AND color_id = ?';
+    console.log("in delete cart", req.body)
+    let {product_id, color_id} = req.body
+    if(!color_id) {color_id = 3}
+    const deleteQuery = 'DELETE FROM CartItems WHERE user_id = ? AND product_id = ? AND color_id = ?';
     let query = util.promisify(db.query).bind(db); 
     try {
       const result = await query(deleteQuery,[req.user.id, product_id, color_id])
+      console.log(req.user.id, product_id, color_id)
       res.status(200).json(result)
     } catch (error) {
       console.error('Error deleting in cart:', error.stack);
@@ -614,7 +730,227 @@ app.post('/deletefromcart', verifyAuth, async(req, res) => {
   }
 }) 
 
+app.get('/defaultaddress', verifyAuth, async(req, res) => {
+  try {
+    const addressQuery = 'SELECT * from Address where user_id = ? AND `default` = true'; 
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(addressQuery,[req.user.id])
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error fetching Address:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
 
+app.post('/placeorder', verifyAuth, async(req, res) => {
+  try {
+    const {payment_id, address, cartItems} = req.body
+
+    const checkAddress = `SELECT * from Address where 
+user_id = ? AND
+full_name = ? AND
+address_line1 = ? AND
+address_line2 = ? AND
+city = ? AND
+state = ? AND
+country = ? AND
+pincode = ? AND
+mobile = ?`
+
+    let query = util.promisify(db.query).bind(db); 
+    try {
+      const result = await query(checkAddress, [req.user.id, address.full_name, address.address_line1, address.address_line2, address.city, address.state, address.country, address.pincode, address.mobile])
+      let address_id;
+      let order_id;
+      console.log(result)
+      if(result.length > 0) {
+        const updateDefaultInAddress = "UPDATE Address SET `default` = ? WHERE address_id = ?"; 
+        await query(updateDefaultInAddress, [address.default, result.address_id])
+        address_id = result[0].address_id;
+        console.log("Updated Address", address_id)
+      } else {
+        const insertQuery = 'INSERT INTO Address(full_name, user_id, address_line1, address_line2, city, state, country, pincode, `default`, mobile) VALUES(?,?,?,?,?,?,?,?,?,?)';
+        const result = await query(insertQuery, [address.full_name, req.user.id, address.address_line1, address.address_line2, address.city, address.state, address.country, address.pincode, address.default, address.mobile]);
+        address_id = result.insertId;
+        console.log("Updated Address", address_id)
+      }
+
+      let total = 0; 
+      for (const item of cartItems) {
+        total = total + item.quantity * item.discounted_price
+      }
+
+      if(address_id) {
+        const createOrderQuery = "INSERT INTO Orders(user_id, order_status, address_id, total, invoice, payment_id, confirmation_date, shipping_date, delivered_date) VALUES(?,?,?,?,?,?, NOW() + INTERVAL 1 DAY, NOW() + INTERVAL 2 DAY, NOW() + INTERVAL 7 DAY)";
+        const result = await query(createOrderQuery, [req.user.id, "pending", address_id, total, "", payment_id])
+        order_id = result.insertId
+      }
+
+      if(order_id) {
+        for(const item of cartItems) {
+          const createOrderLineQuery = "INSERT INTO OrderLine(order_id, product_id, quantity, color_id) VALUES(?,?,?,?)"
+          await query(createOrderLineQuery, [order_id, item.product_id, item.quantity, item.color_id])
+        }
+      }
+
+      res.status(200).json(result)
+    } catch (error) {
+      console.error('Error fetching Address:', error.stack);
+      return res.status(500).json({ error: 'Internal Server Error' });
+    }
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get("/getorders", verifyAuth, async(req, res) => {
+  try {
+    let query = util.promisify(db.query).bind(db); 
+    const getOrdersQuery = `
+SELECT 
+    o.order_id,
+    o.user_id,
+    o.invoice,
+    o.order_status,
+    o.creation_date,
+    o.confirmation_date,
+    o.shipping_date,
+    o.delivered_date,
+    ol.product_id,
+    GROUP_CONCAT(DISTINCT pi.image) AS images, 
+    p.name,
+    ol.quantity,
+    p.price,
+    c.shade_name,
+    c.code,
+    GROUP_CONCAT(DISTINCT cat.category_name) AS categories  -- Get distinct category names
+FROM 
+    Orders o
+JOIN 
+    OrderLine ol ON o.order_id = ol.order_id
+JOIN 
+    Products p ON ol.product_id = p.product_id
+LEFT JOIN 
+    ProductImages pi ON p.product_id = pi.product_id
+LEFT JOIN 
+    Colors c ON ol.color_id = c.color_id
+JOIN 
+    ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
+JOIN 
+    Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
+WHERE 
+    o.user_id = ?
+GROUP BY 
+    o.order_id, ol.order_line_id
+ORDER BY 
+    o.order_id;
+    `;
+    const rows = await query(getOrdersQuery, [req.user.id])
+
+    if (rows.length === 0) {
+        return null; // No order found
+    }
+    const ordersMap = {};
+
+    for(const row of rows) {
+    const {
+      order_id,
+      user_id,
+      invoice,
+      creation_date,
+      confirmation_date,
+      shipping_date,
+      delivered_date,
+      product_id,
+      images,
+      name,
+      quantity,
+      price,
+      shade_name,
+      code,
+      categories,
+      order_status
+    } = row;
+
+    // If the order_id doesn't exist in the map, create a new order entry
+    if (!ordersMap[order_id]) {
+        ordersMap[order_id] = {
+            order_id,
+            user_id,
+            invoice,
+            creation_date,
+            confirmation_date,
+            shipping_date,
+            delivered_date,
+            products: [],
+            status : order_status
+        };
+    }
+
+    // Add product details to the corresponding order
+    ordersMap[order_id].products.push({
+        product_id,
+        images: images ? images.split(',') : [],
+        categories : categories ? categories.split(',') : [],
+        name,
+        quantity,
+        price,
+        shade_name,
+        code
+    });
+    }
+
+    res.status(200).json(Object.values(ordersMap));
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+let environment = new paypal.core.SandboxEnvironment('AXe6TRZyyOvPyk-LJfTnjVRfhgrqUrShjru1GlfCf96laO8aWKMEUO47kmT509bmygakZi61FxrM13i5', 'EMZMzo1Q67oDQ1mMQKKl8vL09_W0DwEwlGi-rdMvWhBxE5xzx7fp_9Ruq2ndJBSkvcggYPs65_KmiB2S');
+let client = new paypal.core.PayPalHttpClient(environment);
+
+app.post('/pay', verifyAuth,async (req, res) => { 
+  console.log("hi from /pay")
+  const request = new paypal.orders.OrdersCreateRequest();
+  request.prefer("return=representation");
+  request.requestBody({
+    intent: 'CAPTURE',
+    purchase_units: [{
+      amount: {
+        currency_code: 'USD',
+        value: req.body.amount,
+      }
+    }]
+  });
+
+  try {
+    const order = await client.execute(request);
+    res.json({ id: order.result.id });
+  } catch (err) {
+    res.status(500).send(err);
+  }
+});
+
+app.post('/capture',verifyAuth, async (req, res) => { 
+  console.log("in capture =>", req.body)
+  const { orderID } = req.body;
+  const request = new paypal.orders.OrdersCaptureRequest(orderID);
+  request.requestBody({});
+
+  try {
+    const capture = await client.execute(request);
+    res.json(capture.result);
+  } catch (err) {
+    res.status(500).send(err);
+  }
+});
 
 
 const PORT = process.env.PORT || 8000;

@@ -9,7 +9,7 @@ const {saveFiletoBucket} = require('./s3.js')
 const path = require('path');
 const dotenv = require('dotenv') 
 const cookieParser = require('cookie-parser');
-const { generateToken, verifyAuth } = require('./auth.js');
+const { generateToken, verifyAuth, verifyAdminAuth } = require('./auth.js');
 const paypal = require('@paypal/checkout-server-sdk');
 
 
@@ -46,15 +46,23 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(cookieParser());
-let db
 
+
+let environment = new paypal.core.SandboxEnvironment('AXe6TRZyyOvPyk-LJfTnjVRfhgrqUrShjru1GlfCf96laO8aWKMEUO47kmT509bmygakZi61FxrM13i5', 'EMZMzo1Q67oDQ1mMQKKl8vL09_W0DwEwlGi-rdMvWhBxE5xzx7fp_9Ruq2ndJBSkvcggYPs65_KmiB2S');
+let client = new paypal.core.PayPalHttpClient(environment);
+
+
+let db
 async function performDatabaseOperations() {
   db = await createConnection();
 } 
-
 performDatabaseOperations().catch(err => console.error('Operation error:', err));
 
 app.get("/getauth", verifyAuth, (req, res) => {
+  return res.status(200).json({message: 'authenticated'})
+}) 
+
+app.get("/getadminauth", verifyAdminAuth, (req, res) => {
   return res.status(200).json({message: 'authenticated'})
 }) 
 
@@ -119,12 +127,13 @@ app.post('/login', (req, res) => {
 
 app.post('/adminlogin', (req, res) => {
   const { email, password } = req.body;
+  console.log("in admin login")
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
-  const sql = 'SELECT * FROM Users WHERE email = ?';
+  const sql = 'SELECT * FROM Admin WHERE email = ?';
   db.query(sql, [email], async (err, results) => {
     if (err) {
       console.error('Error finding user:', err);
@@ -144,7 +153,7 @@ app.post('/adminlogin', (req, res) => {
 
     const token = generateToken(user.user_id, user.email);
     console.log(token)
-    res.cookie('cgntoken', token, {
+    res.cookie('cgnadmintoken', token, {
       httpOnly: true,
       secure: true, // Change to true if using HTTPS
       sameSite: 'None',
@@ -159,6 +168,12 @@ app.post('/adminlogin', (req, res) => {
 app.post('/logout', (req, res) => {
   console.log("in logout")
   res.clearCookie('cgntoken', {
+    httpOnly: true, 
+    secure: true, // Change to true if using HTTPS
+    sameSite: 'None', 
+    path: '/' // Make sure this matches the path used when the cookie was set
+  });
+  res.clearCookie('cgnadmintoken', {
     httpOnly: true, 
     secure: true, // Change to true if using HTTPS
     sameSite: 'None', 
@@ -335,7 +350,7 @@ app.get('/landingpage', async(req, res) => {
   return res.status(200).json({"bestSellers" : bestSellingProducts, "newSellers" : newproducts})
 })
 
-app.post('/addproduct', async(req, res) => { 
+app.post('/addproduct', verifyAdminAuth, async(req, res) => { 
   upload(req, res, async function (err) {
     console.log("in add product")
     if (err instanceof multer.MulterError) {
@@ -491,7 +506,7 @@ app.get('/products', async(req, res) => {
   }
 })
 
-app.post('/addcategory', async(req, res) => {
+app.post('/addcategory', verifyAdminAuth, async(req, res) => {
   const {category_name} = req.body
   try {
     const sql = 'INSERT INTO Categories (category_name) VALUES (?)';
@@ -508,7 +523,7 @@ app.post('/addcategory', async(req, res) => {
   }
 }) 
 
-app.post('/deletecategory', async(req, res) => {
+app.post('/deletecategory', verifyAdminAuth, async(req, res) => {
   const {category_id} = req.body
   try {
     const sql = 'DELETE from Categories where category_id = ?';
@@ -542,7 +557,7 @@ app.get('/categories', async(req, res) => {
   }
 }) 
 
-app.post('/addbestseller', async(req, res) => {
+app.post('/addbestseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
     const sql = 'INSERT INTO BestSellers (product_id) VALUES (?)';
@@ -559,7 +574,7 @@ app.post('/addbestseller', async(req, res) => {
   }
 }) 
 
-app.post('/deletebestseller', async(req, res) => {
+app.post('/deletebestseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
     const sql = 'DELETE from BestSellers where product_id = ?';
@@ -576,7 +591,7 @@ app.post('/deletebestseller', async(req, res) => {
   }
 }) 
 
-app.post('/addnewseller', async(req, res) => {
+app.post('/addnewseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
     const sql = 'INSERT INTO NewSellers (product_id) VALUES (?)';
@@ -593,7 +608,7 @@ app.post('/addnewseller', async(req, res) => {
   }
 })
 
-app.post('/deletenewseller', async(req, res) => {
+app.post('/deletenewseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
     const sql = 'DELETE from NewSellers where product_id = ?';
@@ -610,7 +625,7 @@ app.post('/deletenewseller', async(req, res) => {
   }
 })
 
-app.get('/users', async(req, res) => {
+app.get('/users', verifyAdminAuth, async(req, res) => {
   try {
     const categoriesQuery = 'SELECT * FROM Users'; 
     let query = util.promisify(db.query).bind(db); 
@@ -913,9 +928,6 @@ ORDER BY
   }
 })
 
-let environment = new paypal.core.SandboxEnvironment('AXe6TRZyyOvPyk-LJfTnjVRfhgrqUrShjru1GlfCf96laO8aWKMEUO47kmT509bmygakZi61FxrM13i5', 'EMZMzo1Q67oDQ1mMQKKl8vL09_W0DwEwlGi-rdMvWhBxE5xzx7fp_9Ruq2ndJBSkvcggYPs65_KmiB2S');
-let client = new paypal.core.PayPalHttpClient(environment);
-
 app.post('/pay', verifyAuth,async (req, res) => { 
   console.log("hi from /pay")
   const request = new paypal.orders.OrdersCreateRequest();
@@ -980,6 +992,107 @@ app.get('/getreviews', verifyAuth, async(req, res) => {
       }
       res.status(201).json(result);
     });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
+  try {
+    let query = util.promisify(db.query).bind(db); 
+    const getOrdersQuery = `SELECT 
+    o.order_id,
+    o.user_id,
+    o.invoice,
+    o.order_status,
+    o.creation_date,
+    o.confirmation_date,
+    o.shipping_date,
+    o.delivered_date,
+    ol.product_id,
+    GROUP_CONCAT(DISTINCT pi.image) AS images, 
+    p.name,
+    ol.quantity,
+    p.price,
+    c.shade_name,
+    c.code,
+    GROUP_CONCAT(DISTINCT cat.category_name) AS categories  -- Get distinct category names
+FROM 
+    Orders o
+JOIN 
+    OrderLine ol ON o.order_id = ol.order_id
+JOIN 
+    Products p ON ol.product_id = p.product_id
+LEFT JOIN 
+    ProductImages pi ON p.product_id = pi.product_id
+LEFT JOIN 
+    Colors c ON ol.color_id = c.color_id
+JOIN 
+    ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
+JOIN 
+    Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
+GROUP BY 
+    o.order_id, ol.order_line_id
+ORDER BY 
+    o.order_id;
+    `;
+    const rows = await query(getOrdersQuery)
+
+    if (rows.length === 0) {
+        return null; // No order found
+    }
+    const ordersMap = {};
+
+    for(const row of rows) {
+    const {
+      order_id,
+      user_id,
+      invoice,
+      creation_date,
+      confirmation_date,
+      shipping_date,
+      delivered_date,
+      product_id,
+      images,
+      name,
+      quantity,
+      price,
+      shade_name,
+      code,
+      categories,
+      order_status
+    } = row;
+
+    // If the order_id doesn't exist in the map, create a new order entry
+    if (!ordersMap[order_id]) {
+        ordersMap[order_id] = {
+            order_id,
+            user_id,
+            invoice,
+            creation_date,
+            confirmation_date,
+            shipping_date,
+            delivered_date,
+            products: [],
+            status : order_status
+        };
+    }
+
+    // Add product details to the corresponding order
+    ordersMap[order_id].products.push({
+        product_id,
+        images: images ? images.split(',') : [],
+        categories : categories ? categories.split(',') : [],
+        name,
+        quantity,
+        price,
+        shade_name,
+        code
+    });
+    }
+
+    res.status(200).json(Object.values(ordersMap));
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });

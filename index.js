@@ -646,6 +646,7 @@ app.get('/getcart', verifyAuth, async(req, res) => {
   try {
     const cartQuery = `SELECT 
     p.product_id,
+    p.price,
     p.name AS product_name,
     GROUP_CONCAT(DISTINCT pi.image) AS images,
     p.discounted_price,
@@ -676,6 +677,7 @@ GROUP BY
         cartItems.push({
         product_id: row.product_id,
         name: row.product_name,
+        price:row.price,
         images: row.images ? row.images.split(',') : [],
         discounted_price: row.discounted_price,
         discounted_business_price: row.discounted_business_price,
@@ -928,6 +930,112 @@ ORDER BY
   }
 })
 
+app.get("/order/:id", verifyAuth, async(req, res) => {
+  console.log("in get order")
+  try {
+    const { id } = req.params;
+    let query = util.promisify(db.query).bind(db); 
+    const getOrdersQuery = `
+SELECT 
+    o.order_id,
+    o.user_id,
+    o.invoice,
+    o.order_status,
+    o.creation_date,
+    o.confirmation_date,
+    o.shipping_date,
+    o.delivered_date,
+    ol.product_id,
+    GROUP_CONCAT(DISTINCT pi.image) AS images, 
+    p.name,
+    ol.quantity,
+    p.price,
+    c.shade_name,
+    c.code,
+    GROUP_CONCAT(DISTINCT cat.category_name) AS categories  -- Get distinct category names
+FROM 
+    Orders o
+JOIN 
+    OrderLine ol ON o.order_id = ol.order_id
+JOIN 
+    Products p ON ol.product_id = p.product_id
+LEFT JOIN 
+    ProductImages pi ON p.product_id = pi.product_id
+LEFT JOIN 
+    Colors c ON ol.color_id = c.color_id
+JOIN 
+    ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
+JOIN 
+    Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
+WHERE 
+    o.order_id = ?
+GROUP BY 
+    o.order_id, ol.order_line_id
+ORDER BY 
+    o.order_id;
+    `;
+    const rows = await query(getOrdersQuery, [req.user.id])
+
+    if (rows.length === 0) {
+        return null; // No order found
+    }
+    const ordersMap = {};
+
+    for(const row of rows) {
+    const {
+      order_id,
+      user_id,
+      invoice,
+      creation_date,
+      confirmation_date,
+      shipping_date,
+      delivered_date,
+      product_id,
+      images,
+      name,
+      quantity,
+      price,
+      shade_name,
+      code,
+      categories,
+      order_status
+    } = row;
+
+    // If the order_id doesn't exist in the map, create a new order entry
+    if (!ordersMap[order_id]) {
+        ordersMap[order_id] = {
+            order_id,
+            user_id,
+            invoice,
+            creation_date,
+            confirmation_date,
+            shipping_date,
+            delivered_date,
+            products: [],
+            status : order_status
+        };
+    }
+
+    // Add product details to the corresponding order
+    ordersMap[order_id].products.push({
+        product_id,
+        images: images ? images.split(',') : [],
+        categories : categories ? categories.split(',') : [],
+        name,
+        quantity,
+        price,
+        shade_name,
+        code
+    });
+    }
+    console.log(ordersMap)
+    res.status(200).json(Object.values(ordersMap));
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
 app.post('/pay', verifyAuth,async (req, res) => { 
   console.log("hi from /pay")
   const request = new paypal.orders.OrdersCreateRequest();
@@ -1017,7 +1125,16 @@ app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
     p.price,
     c.shade_name,
     c.code,
-    GROUP_CONCAT(DISTINCT cat.category_name) AS categories  -- Get distinct category names
+    GROUP_CONCAT(DISTINCT cat.category_name) AS categories,  -- Get distinct category names
+    a.address_id,
+    a.full_name,
+    a.address_line1,
+    a.address_line2,
+    a.city,
+    a.state,
+    a.pincode,
+    a.country,
+    a.mobile
 FROM 
     Orders o
 JOIN 
@@ -1032,6 +1149,8 @@ JOIN
     ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
 JOIN 
     Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
+LEFT JOIN 
+    Address a ON o.address_id = a.address_id  -- Join with Address table
 GROUP BY 
     o.order_id, ol.order_line_id
 ORDER BY 
@@ -1044,55 +1163,128 @@ ORDER BY
     }
     const ordersMap = {};
 
-    for(const row of rows) {
-    const {
-      order_id,
-      user_id,
-      invoice,
-      creation_date,
-      confirmation_date,
-      shipping_date,
-      delivered_date,
-      product_id,
-      images,
-      name,
-      quantity,
-      price,
-      shade_name,
-      code,
-      categories,
-      order_status
-    } = row;
-
-    // If the order_id doesn't exist in the map, create a new order entry
-    if (!ordersMap[order_id]) {
-        ordersMap[order_id] = {
-            order_id,
-            user_id,
-            invoice,
-            creation_date,
-            confirmation_date,
-            shipping_date,
-            delivered_date,
-            products: [],
-            status : order_status
-        };
-    }
-
-    // Add product details to the corresponding order
-    ordersMap[order_id].products.push({
+    for (const row of rows) {
+      const {
+        order_id,
+        user_id,
+        invoice,
+        creation_date,
+        confirmation_date,
+        shipping_date,
+        delivered_date,
         product_id,
-        images: images ? images.split(',') : [],
-        categories : categories ? categories.split(',') : [],
+        images,
         name,
         quantity,
         price,
         shade_name,
-        code
-    });
-    }
+        code,
+        categories,
+        order_status,
+        // Address fields
+        address_id,
+        full_name,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode,
+        country,
+        mobile
+      } = row;
+  
+      // If the order_id doesn't exist in the map, create a new order entry
+      if (!ordersMap[order_id]) {
+          ordersMap[order_id] = {
+              order_id,
+              user_id,
+              invoice,
+              creation_date,
+              confirmation_date,
+              shipping_date,
+              delivered_date,
+              products: [],
+              status : order_status,
+              address: {
+                  address_id,
+                  full_name,
+                  address_line1,
+                  address_line2,
+                  city,
+                  state,
+                  pincode,
+                  country,
+                  mobile
+              }
+          };
+      }
+  
+      // Add product details to the corresponding order
+      ordersMap[order_id].products.push({
+          product_id,
+          images: images ? images.split(',') : [],
+          categories : categories ? categories.split(',') : [],
+          name,
+          quantity,
+          price,
+          shade_name,
+          code
+      });
+  }
+  
 
     res.status(200).json(Object.values(ordersMap));
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.post('/adminconfirmorder', verifyAdminAuth, async(req, res) => {
+  const {order_id} = req.body
+  try {
+    const sql = 'UPDATE Orders SET order_status = "confirmed" WHERE order_id = ?';
+    db.query(sql, [order_id], (err, result) => {
+      if (err) {
+        console.error('Error updating order:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'status changed successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.post('/adminshiporder', verifyAdminAuth, async(req, res) => {
+  const {order_id} = req.body
+  try {
+    const sql = 'UPDATE Orders SET order_status = "shipped" WHERE order_id = ?';
+    db.query(sql, [order_id], (err, result) => {
+      if (err) {
+        console.error('Error updating order:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'status changed successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.post('/admindeliverorder', verifyAdminAuth, async(req, res) => {
+  const {order_id} = req.body
+  try {
+    const sql = 'UPDATE Orders SET order_status = "delivered" WHERE order_id = ?';
+    db.query(sql, [order_id], (err, result) => {
+      if (err) {
+        console.error('Error updating order:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'status changed successfully!' });
+    });
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });

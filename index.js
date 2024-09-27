@@ -11,6 +11,7 @@ const dotenv = require('dotenv')
 const cookieParser = require('cookie-parser');
 const { generateToken, verifyAuth, verifyAdminAuth } = require('./auth.js');
 const paypal = require('@paypal/checkout-server-sdk');
+const { clear } = require('console');
 
 
 dotenv.config()
@@ -702,6 +703,7 @@ GROUP BY
 app.post('/updateCart', verifyAuth, async(req, res) => {
   const {product_id, quantity, color_id} = req.body
   try {
+    console.log(product_id, quantity, color_id)
     let query = util.promisify(db.query).bind(db); 
     try {
       const checkquery = 'SELECT * FROM CartItems where user_id=? and product_id=? and color_id=?';
@@ -730,7 +732,7 @@ app.post('/deletefromcart', verifyAuth, async(req, res) => {
   try {
     console.log("in delete cart", req.body)
     let {product_id, color_id} = req.body
-    if(!color_id) {color_id = 3}
+    if(!color_id) {color_id = 1}
     const deleteQuery = 'DELETE FROM CartItems WHERE user_id = ? AND product_id = ? AND color_id = ?';
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -814,8 +816,9 @@ mobile = ?`
           await query(createOrderLineQuery, [order_id, item.product_id, item.quantity, item.color_id])
         }
       }
-
-      res.status(200).json(result)
+      const clearCart = "DELETE from CartItems where user_id = ?"
+      await query(clearCart, [req.user.id])
+      res.status(200).json({"order_id": order_id})
     } catch (error) {
       console.error('Error fetching Address:', error.stack);
       return res.status(500).json({ error: 'Internal Server Error' });

@@ -3,9 +3,9 @@ const mysql = require('mysql2');
 function createConnection() {
   return new Promise((resolve, reject) => {
     const db = mysql.createConnection({
-      host: 'cgndbfree1.cf08ueq80ake.ap-south-1.rds.amazonaws.com',
+      host: 'cgndbinstance.ctecww4uw29g.us-east-1.rds.amazonaws.com',
       user: 'root',
-      password: 'CGNbackendFree1',
+      password: 'CGN_db2024',
       database: 'cgnDB'
     });
 

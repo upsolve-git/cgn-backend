@@ -270,7 +270,6 @@ app.get('/landingpage', async(req, res) => {
     try {
       let rows = await query(bestSellerProductDetailsQuery)
       for (const row of rows) {
-        console.log(row.name)
         bestSellingProducts.push({
           product_id: row.product_id,
           name: row.name,
@@ -325,7 +324,6 @@ app.get('/landingpage', async(req, res) => {
     try {
       let rows = await query(newSellerProductDetailsQuery)
       for (const row of rows) {
-        console.log(row.name)
         newproducts.push({
           product_id: row.product_id,
           name: row.name,
@@ -481,7 +479,6 @@ app.get('/products', async(req, res) => {
       let rows = await query(productDetailsQuery)
       let products = []
       for (const row of rows) {
-        console.log(row.name)
         products.push({
           product_id: row.product_id,
           name: row.name,

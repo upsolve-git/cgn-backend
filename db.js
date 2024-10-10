@@ -6,7 +6,8 @@ function createConnection() {
       host: 'cgndbinstance.ctecww4uw29g.us-east-1.rds.amazonaws.com',
       user: 'root',
       password: 'CGN_db2024',
-      database: 'cgnDB'
+      database: 'cgnDB',
+      waitForConnections: true,
     });
 
     db.connect((err) => {

@@ -709,11 +709,11 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
       if(result.length == 0) {
         const updatequery = 'INSERT INTO CartItems(user_id, product_id, quantity, color_id) VALUES(?, ?, ?, ?)'
         const result = await query(updatequery, [req.user.id, product_id, quantity, color_id]);
-        res.status(200)
+        res.status(200).json({ message: 'updated cart' });
       } else {
         const updateQuery = 'UPDATE CartItems SET quantity = ? WHERE user_id = ? AND product_id = ? AND color_id =?';
         const result = await query(updateQuery, [quantity, req.user.id, product_id, color_id]);
-        res.status(200)
+        res.status(200).json({ message: 'updated cart' });
       }
     } catch (error) {
       console.error('Error fetching users:', error.stack);
@@ -944,6 +944,7 @@ SELECT
     o.creation_date,
     o.confirmation_date,
     o.shipping_date,
+    o.total,
     o.delivered_date,
     ol.product_id,
     GROUP_CONCAT(DISTINCT pi.image) AS images, 
@@ -992,6 +993,7 @@ ORDER BY
       delivered_date,
       product_id,
       images,
+      total,
       name,
       quantity,
       price,
@@ -1012,7 +1014,8 @@ ORDER BY
             shipping_date,
             delivered_date,
             products: [],
-            status : order_status
+            status : order_status,
+            total
         };
     }
 

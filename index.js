@@ -53,12 +53,6 @@ let environment = new paypal.core.SandboxEnvironment('AXe6TRZyyOvPyk-LJfTnjVRfhg
 let client = new paypal.core.PayPalHttpClient(environment);
 
 
-let db
-async function performDatabaseOperations() {
-  db = await createConnection();
-} 
-performDatabaseOperations().catch(err => console.error('Operation error:', err));
-
 app.get("/getauth", verifyAuth, (req, res) => {
   return res.status(200).json({message: 'authenticated'})
 }) 
@@ -73,6 +67,7 @@ app.post('/signup', async (req, res) => {
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    let db = await createConnection();
     const sql = 'INSERT INTO Users (email, password, first_name, last_name, phone, account_type, country_code) VALUES (?, ?, ?, ?, ?, ?, ?)';
     db.query(sql, [email, hashedPassword, firstName, lastName, phone, accType, countryCode], (err, result) => {
       if (err) {
@@ -87,13 +82,14 @@ app.post('/signup', async (req, res) => {
   }
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async(req, res) => {
   const { email, password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
+  let db = await createConnection();
   const sql = 'SELECT * FROM Users WHERE email = ?';
   db.query(sql, [email], async (err, results) => {
     if (err) {
@@ -126,7 +122,7 @@ app.post('/login', (req, res) => {
   });
 });
 
-app.post('/adminlogin', (req, res) => {
+app.post('/adminlogin', async(req, res) => {
   const { email, password } = req.body;
   console.log("in admin login")
 
@@ -134,6 +130,7 @@ app.post('/adminlogin', (req, res) => {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
+  let db = await createConnection();
   const sql = 'SELECT * FROM Admin WHERE email = ?';
   db.query(sql, [email], async (err, results) => {
     if (err) {
@@ -186,8 +183,10 @@ app.post('/logout', (req, res) => {
 
 app.post('/auth/google', async (req, res) => {
   const { email, first_name, last_name } = req.body;
-
+  let db = await createConnection();
   try {
+    
+   
     const sql = 'SELECT * FROM Users WHERE email = ?';
     db.query(sql, [email], (err, results) => {
       if (err) {
@@ -238,7 +237,9 @@ app.post('/auth/google', async (req, res) => {
 app.get('/landingpage', async(req, res) => {
   let newproducts = []
   let bestSellingProducts = []
+  let db = await createConnection();
   try {
+    
     const bestSellerProductDetailsQuery = `SELECT 
         p.product_id,
         p.name,
@@ -350,6 +351,8 @@ app.get('/landingpage', async(req, res) => {
 })
 
 app.post('/addproduct', verifyAdminAuth, async(req, res) => { 
+  let db = await createConnection();
+
   upload(req, res, async function (err) {
     console.log("in add product")
     if (err instanceof multer.MulterError) {
@@ -449,6 +452,8 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
 
 app.get('/products', async(req, res) => {
   try {
+    let db = await createConnection();
+
     const productDetailsQuery = `SELECT 
         p.product_id,
         p.name,
@@ -507,6 +512,8 @@ app.get('/products', async(req, res) => {
 app.post('/addcategory', verifyAdminAuth, async(req, res) => {
   const {category_name} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'INSERT INTO Categories (category_name) VALUES (?)';
     db.query(sql, [category_name], (err, result) => {
       if (err) {
@@ -524,6 +531,8 @@ app.post('/addcategory', verifyAdminAuth, async(req, res) => {
 app.post('/deletecategory', verifyAdminAuth, async(req, res) => {
   const {category_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'DELETE from Categories where category_id = ?';
     db.query(sql, [category_id], (err, result) => {
       if (err) {
@@ -540,6 +549,8 @@ app.post('/deletecategory', verifyAdminAuth, async(req, res) => {
 
 app.get('/categories', async(req, res) => {
   try {
+    let db = await createConnection();
+
     const categoriesQuery = 'SELECT * FROM Categories'; 
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -558,6 +569,8 @@ app.get('/categories', async(req, res) => {
 app.post('/addbestseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'INSERT INTO BestSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
@@ -575,6 +588,8 @@ app.post('/addbestseller', verifyAdminAuth, async(req, res) => {
 app.post('/deletebestseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'DELETE from BestSellers where product_id = ?';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
@@ -592,6 +607,8 @@ app.post('/deletebestseller', verifyAdminAuth, async(req, res) => {
 app.post('/addnewseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'INSERT INTO NewSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
@@ -609,6 +626,8 @@ app.post('/addnewseller', verifyAdminAuth, async(req, res) => {
 app.post('/deletenewseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'DELETE from NewSellers where product_id = ?';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
@@ -625,6 +644,8 @@ app.post('/deletenewseller', verifyAdminAuth, async(req, res) => {
 
 app.get('/users', verifyAdminAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     const categoriesQuery = 'SELECT * FROM Users'; 
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -642,6 +663,8 @@ app.get('/users', verifyAdminAuth, async(req, res) => {
 
 app.get('/getcart', verifyAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     const cartQuery = `SELECT 
     p.product_id,
     p.price,
@@ -700,6 +723,8 @@ GROUP BY
 app.post('/updateCart', verifyAuth, async(req, res) => {
   const {product_id, quantity, color_id} = req.body
   try {
+    let db = await createConnection();
+
     console.log(product_id, quantity, color_id)
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -727,6 +752,8 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
 
 app.post('/deletefromcart', verifyAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     console.log("in delete cart", req.body)
     let {product_id, color_id} = req.body
     if(!color_id) {color_id = 1}
@@ -748,6 +775,8 @@ app.post('/deletefromcart', verifyAuth, async(req, res) => {
 
 app.get('/defaultaddress', verifyAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     const addressQuery = 'SELECT * from Address where user_id = ? AND `default` = true'; 
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -765,6 +794,8 @@ app.get('/defaultaddress', verifyAuth, async(req, res) => {
 
 app.post('/placeorder', verifyAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     const {payment_id, address, cartItems} = req.body
 
     const checkAddress = `SELECT * from Address where 
@@ -828,6 +859,8 @@ mobile = ?`
 
 app.get("/getorders", verifyAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     let query = util.promisify(db.query).bind(db); 
     const getOrdersQuery = `
 SELECT 
@@ -933,6 +966,8 @@ ORDER BY
 app.get("/order/:id", verifyAuth, async(req, res) => {
   console.log("in get order")
   try {
+    let db = await createConnection();
+
     const { id } = req.params;
     let query = util.promisify(db.query).bind(db); 
     const getOrdersQuery = `
@@ -1040,6 +1075,8 @@ ORDER BY
 })
 
 app.post('/pay', verifyAuth,async (req, res) => { 
+  let db = await createConnection();
+
   console.log("hi from /pay")
   const request = new paypal.orders.OrdersCreateRequest();
   request.prefer("return=representation");
@@ -1062,6 +1099,8 @@ app.post('/pay', verifyAuth,async (req, res) => {
 });
 
 app.post('/capture',verifyAuth, async (req, res) => { 
+  let db = await createConnection();
+
   console.log("in capture =>", req.body)
   const { orderID } = req.body;
   const request = new paypal.orders.OrdersCaptureRequest(orderID);
@@ -1078,6 +1117,8 @@ app.post('/capture',verifyAuth, async (req, res) => {
 app.post('/addreview', verifyAuth, async(req, res) => {
   const {product_id, review, rating} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'INSERT INTO Reviews(user_id, product_id, review_content, review_stars) VALUES(?, ?, ?, ?)';
     db.query(sql, [req.user.id, product_id, review, rating], (err, result) => {
       if (err) {
@@ -1095,6 +1136,8 @@ app.post('/addreview', verifyAuth, async(req, res) => {
 app.get('/getreviews', verifyAuth, async(req, res) => {
   const {product_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'SELECT * from Reviews WHERE product_id = ?';
     db.query(sql, [product_id], (err, result) => {
       if (err) {
@@ -1111,6 +1154,8 @@ app.get('/getreviews', verifyAuth, async(req, res) => {
 
 app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
   try {
+    let db = await createConnection();
+
     let query = util.promisify(db.query).bind(db); 
     const getOrdersQuery = `SELECT 
     o.order_id,
@@ -1246,6 +1291,8 @@ ORDER BY
 app.post('/adminconfirmorder', verifyAdminAuth, async(req, res) => {
   const {order_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'UPDATE Orders SET order_status = "confirmed" WHERE order_id = ?';
     db.query(sql, [order_id], (err, result) => {
       if (err) {
@@ -1263,6 +1310,8 @@ app.post('/adminconfirmorder', verifyAdminAuth, async(req, res) => {
 app.post('/adminshiporder', verifyAdminAuth, async(req, res) => {
   const {order_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'UPDATE Orders SET order_status = "shipped" WHERE order_id = ?';
     db.query(sql, [order_id], (err, result) => {
       if (err) {
@@ -1280,6 +1329,8 @@ app.post('/adminshiporder', verifyAdminAuth, async(req, res) => {
 app.post('/admindeliverorder', verifyAdminAuth, async(req, res) => {
   const {order_id} = req.body
   try {
+    let db = await createConnection();
+
     const sql = 'UPDATE Orders SET order_status = "delivered" WHERE order_id = ?';
     db.query(sql, [order_id], (err, result) => {
       if (err) {

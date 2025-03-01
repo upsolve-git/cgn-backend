@@ -463,7 +463,14 @@ app.get('/products', async(req, res) => {
     p.discounted_price,
     p.discounted_business_price,
     GROUP_CONCAT(DISTINCT c.category_name) AS categories,
-    GROUP_CONCAT(DISTINCT pi.image) AS images,
+    (
+        SELECT JSON_ARRAYAGG(image)
+        FROM (
+            SELECT DISTINCT pi.image 
+            FROM ProductImages pi 
+            WHERE pi.product_id = p.product_id
+        ) AS sub_images
+    ) AS images,
     (
         SELECT JSON_ARRAYAGG(
             JSON_OBJECT(
@@ -486,8 +493,6 @@ LEFT JOIN
     ProductCategoryMappings pcm ON p.product_id = pcm.product_id
 LEFT JOIN 
     Categories c ON pcm.category_id = c.category_id
-LEFT JOIN 
-    ProductImages pi ON p.product_id = pi.product_id
 GROUP BY 
     p.product_id;
 `; 

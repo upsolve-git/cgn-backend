@@ -455,30 +455,42 @@ app.get('/products', async(req, res) => {
     let db = await createConnection();
 
     const productDetailsQuery = `SELECT 
-        p.product_id,
-        p.name,
-        p.product_type,
-        p.description,
-        p.price,
-        p.discounted_price,
-        p.discounted_business_price,
-        GROUP_CONCAT(DISTINCT c.category_name) AS categories,
-        GROUP_CONCAT(DISTINCT pi.image) AS images,
-        JSON_ARRAYAGG(DISTINCT JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
-    FROM 
-        Products p
-    LEFT JOIN 
-        ProductCategoryMappings pcm ON p.product_id = pcm.product_id
-    LEFT JOIN 
-        Categories c ON pcm.category_id = c.category_id
-    LEFT JOIN 
-        ProductImages pi ON p.product_id = pi.product_id
-    LEFT JOIN 
-        ProductColorMappings pcm2 ON p.product_id = pcm2.product_id
-    LEFT JOIN 
-        Colors clr ON pcm2.color_id = clr.color_id
-    GROUP BY 
-        p.product_id;`; 
+    p.product_id,
+    p.name,
+    p.product_type,
+    p.description,
+    p.price,
+    p.discounted_price,
+    p.discounted_business_price,
+    GROUP_CONCAT(DISTINCT c.category_name) AS categories,
+    GROUP_CONCAT(DISTINCT pi.image) AS images,
+    (
+        SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+                'color_name', sub_clr.color_name,
+                'shade_name', sub_clr.shade_name,
+                'code', sub_clr.code,
+                'color_id', sub_clr.color_id
+            )
+        )
+        FROM (
+            SELECT DISTINCT clr.color_name, clr.shade_name, clr.code, clr.color_id
+            FROM ProductColorMappings pcm2
+            JOIN Colors clr ON pcm2.color_id = clr.color_id
+            WHERE pcm2.product_id = p.product_id
+        ) AS sub_clr
+    ) AS colors
+FROM 
+    Products p
+LEFT JOIN 
+    ProductCategoryMappings pcm ON p.product_id = pcm.product_id
+LEFT JOIN 
+    Categories c ON pcm.category_id = c.category_id
+LEFT JOIN 
+    ProductImages pi ON p.product_id = pi.product_id
+GROUP BY 
+    p.product_id;
+`; 
     let query = util.promisify(db.query).bind(db); 
     try {
       let rows = await query(productDetailsQuery)

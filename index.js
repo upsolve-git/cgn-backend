@@ -510,7 +510,7 @@ GROUP BY
           discounted_price: row.discounted_price,
           discounted_business_price: row.discounted_business_price,
           categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
-          images: row.images ? row.images.split(',') : [],              // Convert comma-separated string to array
+          images: row.images,              // Convert comma-separated string to array
           colors: row.colors                               // Colors already returned as JSON array
         })
       }

@@ -464,7 +464,7 @@ app.get('/products', async(req, res) => {
         p.discounted_business_price,
         GROUP_CONCAT(DISTINCT c.category_name) AS categories,
         GROUP_CONCAT(DISTINCT pi.image) AS images,
-        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
+        JSON_ARRAYAGG(DISTINCT JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
     FROM 
         Products p
     LEFT JOIN 

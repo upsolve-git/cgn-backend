@@ -7,7 +7,8 @@ const generateToken = (id,email) => {
 }
 const verifyAuth = async (req, res, next) => {
 
-    const token = req.cookies.cgntoken;
+    let token = req.cookies.cgntoken;
+    if( token ==null) token = req.cookies.cgnadmintoken;
     if (token == null) return res.status(401).json({ message: 'No token provided' });
     jwt.verify(token, jwtSecret, (err, user) => {
         if (err) return res.status(403).json({ message: 'Invalid token' });

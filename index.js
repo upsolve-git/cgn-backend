@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const createConnection =  require("./db.js")
 const util = require('util');
 const multer = require('multer');
-const {saveFiletoBucket} = require('./s3.js')
+const {saveFiletoBucket, updateFiletoBucket} = require('./s3.js')
 const path = require('path');
 const dotenv = require('dotenv') 
 const cookieParser = require('cookie-parser');
@@ -22,7 +22,7 @@ const storage = multer.diskStorage({
     cb(null, 'uploads/')
   },
   filename: function (req, file, cb) {
-    cb(null, file.fieldname + '-' + Date.now()+path.extname(file.originalname))
+    cb(null, file.originalname)
   }
 });
 
@@ -1418,6 +1418,58 @@ app.post('/sendfeeback', async(req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 })
+
+app.post('/updateproduct', async (req, res) => {
+  let db = await createConnection();
+
+  upload(req, res, async function (err) {
+    console.log("Updating product");
+    if (err instanceof multer.MulterError) {
+      return res.status(500).json({ message: "Error in uploading files" });
+    } else if (err) {
+      return res.status(500).json({ message: "Error in uploading files" });
+    }
+
+    const { product_id, name, description, price, discounted_business_price } = req.body;
+    try {
+      let query = util.promisify(db.query).bind(db);
+
+      // Update the product details without checking values
+      const updateProductSQL = `UPDATE Products SET name = ?, description = ?, price = ?, discounted_business_price = ? WHERE product_id = ?`;
+      const updateResult = await query(updateProductSQL, [name, description, price, discounted_business_price, product_id]);
+
+      if (updateResult.affectedRows === 0) {
+        return res.status(500).json({ message: "Failed to update product" });
+      }
+
+      // Handle image uploads
+      const files = req.files;
+      let locations = [];
+      let cnt = 1;
+
+      for (const file of files) {
+        const location = await updateFiletoBucket(file, product_id, cnt);
+        console.log("Uploaded location:", location);
+        locations.push(location);
+        cnt += 1;
+      }
+
+      for (let i = 0; i < locations.length; i++) {
+        const productImagesQuery = "INSERT INTO ProductImages(product_id, image) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM ProductImages WHERE product_id = ? AND image = ?)";
+        const result = await query(productImagesQuery, [product_id, locations[i], product_id, locations[i]]);
+        if (result.affectedRows == 0) {
+          console.log("Failed to store product image");
+        }
+      }
+
+      res.status(200).json({ message: "Product updated successfully" });
+    } catch (error) {
+      console.log(error);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+});
+
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {

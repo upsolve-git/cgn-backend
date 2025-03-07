@@ -250,8 +250,30 @@ app.get('/landingpage', async(req, res) => {
         p.discounted_price,
         p.discounted_business_price,
         GROUP_CONCAT(DISTINCT c.category_name) AS categories,
-        GROUP_CONCAT(DISTINCT pi.image) AS images,
-        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
+            (
+        SELECT JSON_ARRAYAGG(image)
+        FROM (
+            SELECT DISTINCT pi.image 
+            FROM ProductImages pi 
+            WHERE pi.product_id = p.product_id
+        ) AS sub_images
+    ) AS images,
+    (
+        SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+                'color_name', sub_clr.color_name,
+                'shade_name', sub_clr.shade_name,
+                'code', sub_clr.code,
+                'color_id', sub_clr.color_id
+            )
+        )
+        FROM (
+            SELECT DISTINCT clr.color_name, clr.shade_name, clr.code, clr.color_id
+            FROM ProductColorMappings pcm2
+            JOIN Colors clr ON pcm2.color_id = clr.color_id
+            WHERE pcm2.product_id = p.product_id
+        ) AS sub_clr
+    ) AS colors
     FROM 
         Products p
     JOIN
@@ -281,7 +303,7 @@ app.get('/landingpage', async(req, res) => {
           discounted_price: row.discounted_price,
           discounted_business_price: row.discounted_business_price,
           categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
-          images: row.images ? row.images.split(',') : [],              // Convert comma-separated string to array
+          images: row.images,              // Convert comma-separated string to array
           colors: row.colors                               // Colors already returned as JSON array
         })
       }
@@ -304,8 +326,30 @@ app.get('/landingpage', async(req, res) => {
         p.discounted_price,
         p.discounted_business_price,
         GROUP_CONCAT(DISTINCT c.category_name) AS categories,
-        GROUP_CONCAT(DISTINCT pi.image) AS images,
-        JSON_ARRAYAGG(JSON_OBJECT('color_name', clr.color_name, 'shade_name', clr.shade_name, 'code', clr.code, 'color_id', clr.color_id)) AS colors
+           (
+        SELECT JSON_ARRAYAGG(image)
+        FROM (
+            SELECT DISTINCT pi.image 
+            FROM ProductImages pi 
+            WHERE pi.product_id = p.product_id
+        ) AS sub_images
+    ) AS images,
+    (
+        SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+                'color_name', sub_clr.color_name,
+                'shade_name', sub_clr.shade_name,
+                'code', sub_clr.code,
+                'color_id', sub_clr.color_id
+            )
+        )
+        FROM (
+            SELECT DISTINCT clr.color_name, clr.shade_name, clr.code, clr.color_id
+            FROM ProductColorMappings pcm2
+            JOIN Colors clr ON pcm2.color_id = clr.color_id
+            WHERE pcm2.product_id = p.product_id
+        ) AS sub_clr
+    ) AS colors
     FROM 
         Products p
     JOIN
@@ -335,7 +379,7 @@ app.get('/landingpage', async(req, res) => {
           discounted_price: row.discounted_price,
           discounted_business_price: row.discounted_business_price,
           categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
-          images: row.images ? row.images.split(',') : [],              // Convert comma-separated string to array
+          images: row.images ,              // Convert comma-separated string to array
           colors: row.colors                               // Colors already returned as JSON array
         })
       }

@@ -12,6 +12,7 @@ const cookieParser = require('cookie-parser');
 const { generateToken, verifyAuth, verifyAdminAuth } = require('./auth.js');
 const paypal = require('@paypal/checkout-server-sdk');
 const { clear } = require('console');
+const Mail = require('./mail');
 
 
 dotenv.config()
@@ -1356,6 +1357,18 @@ app.post('/admindeliverorder', verifyAdminAuth, async(req, res) => {
       }
       res.status(201).json({ message: 'status changed successfully!' });
     });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.post('/sendfeeback', async(req, res) => {
+  const {email, feedback, name} = req.body
+  try {
+    console.log("here")
+    Mail.sendMail(name, email, feedback);
+    res.status(200).json({ message: 'Mail sent successful' });
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });

@@ -32,7 +32,7 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({extended:false}))
 app.use(express.json());
 
-const allowedOrigins = ['https://www.canadiangelnails.com', 'http://localhost:3000'];
+const allowedOrigins = ['https://www.canadiangelnails.com', 'http://localhost:3000', 'http://localhost:5000', 'https://posapi.canadiangelnails.com'];
 
 const corsOptions = {
   origin: function (origin, callback) {

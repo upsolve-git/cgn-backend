@@ -13,6 +13,7 @@ const { generateToken, verifyAuth, verifyAdminAuth } = require('./auth.js');
 const paypal = require('@paypal/checkout-server-sdk');
 const { clear } = require('console');
 const Mail = require('./mail');
+const jwt = require('jsonwebtoken');
 
 
 dotenv.config()
@@ -1470,6 +1471,50 @@ app.post('/updateproduct', async (req, res) => {
   });
 });
 
+app.post('/forgotpassword', async (req, res) => {
+  const { email } = req.body;
+  console.log("here");
+  if (!email) {
+    return res.status(400).json({ message: 'Email is required' });
+  }
+  try {
+    let db = await createConnection();
+    const [user] = await db.promise().query('SELECT * FROM Users WHERE email = ?', [email]);
+    if (user.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    Mail.sendResetMail(email, generateToken(user[0].user_id, user[0].email));
+    res.status(200).json({ message: 'Password reset email sent successfully' });
+  }
+  catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+
+})
+
+app.post('/resetpassword/:token',async(req,res)=>{
+  const { token } = req.params;
+
+  try {
+    jwt.verify(token, process.env.JWT_SECRET, async(err, decoded) =>{
+      if (err) {
+        console.log(err);
+        return res.status(400).send("Password reset failed, possibly the link is invalid or expired.");
+      }
+      const email = decoded.username;
+      const hashedPassword = await bcrypt.hash(req.body.password, 10);
+      let db = await createConnection();
+      console.log(email, hashedPassword);
+      await db.promise().query('UPDATE Users SET password = ? WHERE email = ?', [hashedPassword, email]);
+
+      res.status(200).json({ message: "Password updated successfully!" });
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Server error" });
+  }
+})
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {

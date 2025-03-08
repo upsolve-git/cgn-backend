@@ -13,7 +13,7 @@ function saveFiletoBucket(file, product_id, id) {
 
       // Set up S3 upload parameters
       const params = {
-        Bucket: 'cgnproductuploads',
+        Bucket: 'cgnwebproductuploads',
         Key: "product/" + String(product_id) + "/" + String(id) + ".png",
         Body: data
       };
@@ -53,7 +53,7 @@ function updateFiletoBucket(file, product_id, id) {
 
       // Set up S3 upload parameters
       const params = {
-        Bucket: 'cgnproductuploads',
+        Bucket: 'cgnwebproductuploads',
         Key: file.originalname,
         Body: data
       };

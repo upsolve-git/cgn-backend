@@ -1434,11 +1434,28 @@ app.post('/updateproduct', async (req, res) => {
     const { product_id, name, description, price, discounted_business_price } = req.body;
     try {
       let query = util.promisify(db.query).bind(db);
-
+        // Get current product details
+        const [product] = await query(`SELECT * FROM Products WHERE product_id = ?`, [product_id]);
+        if (!product) {
+          return res.status(404).json({ message: "Product not found" });
+        }
       // Update the product details without checking values
-      const updateProductSQL = `UPDATE Products SET name = ?, description = ?, price = ?, discounted_business_price = ? WHERE product_id = ?`;
-      const updateResult = await query(updateProductSQL, [name, description, price, discounted_business_price, product_id]);
-
+      const updateProductSQL = `
+      UPDATE Products 
+      SET 
+        name = COALESCE(?, name), 
+        description = COALESCE(?, description), 
+        price = COALESCE(?, price), 
+        discounted_business_price = COALESCE(?, discounted_business_price)
+      WHERE product_id = ?`;
+    
+      const updateResult = await query(updateProductSQL, [
+        name || product.name,
+        description || product.description,
+        price || product.price,
+        discounted_business_price || product.discounted_business_price,
+        product_id
+      ]);
       if (updateResult.affectedRows === 0) {
         return res.status(500).json({ message: "Failed to update product" });
       }

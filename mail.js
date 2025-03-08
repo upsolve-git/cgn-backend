@@ -95,6 +95,32 @@ const sendMail = async(name, email, feedback) => {
     }
 }
 
+const sendResetMail = async(email, token) => {
+  try {   
+  
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+          user: process.env.EMAIL,
+          pass: process.env.PASSWORD
+      } 
+    });
+
+    const mailConfigurations = {
+      from: process.env.EMAIL,
+      to: email,
+      subject:"Password Reset",
+      html:`<p>Click <a href="${process.env.CLIENT_URL}/auth/resetpassword/${token}">here</a> to reset your password</p>`
+    };
+
+    await transporter.sendMail(mailConfigurations);
+    console.log("Email Sent Successfully");
+  } catch (error) {
+    console.error("Error sending email:", error.message);    
+  }
+}
+
 module.exports = {
-    sendMail
+    sendMail,
+    sendResetMail
 }

@@ -85,15 +85,15 @@ app.post('/signup', async (req, res) => {
 });
 
 app.post('/login', async(req, res) => {
-  const { email, password } = req.body;
+  const { email, password, accType } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
   }
 
   let db = await createConnection();
-  const sql = 'SELECT * FROM Users WHERE email = ?';
-  db.query(sql, [email], async (err, results) => {
+  const sql = 'SELECT * FROM Users WHERE email = ? and account_type =?';
+  db.query(sql, [email, accType], async (err, results) => {
     if (err) {
       console.error('Error finding user:', err);
       return res.status(500).json({ message: 'Database error' });

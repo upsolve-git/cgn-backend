@@ -396,7 +396,7 @@ app.get('/landingpage', async(req, res) => {
   return res.status(200).json({"bestSellers" : bestSellingProducts, "newSellers" : newproducts})
 })
 
-app.post('/addproduct', verifyAdminAuth, async(req, res) => { 
+app.post('/addproduct', verifyAdminAuth, async(req, res) => {
   let db = await createConnection();
 
   upload(req, res, async function (err) {
@@ -411,8 +411,23 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
     console.log(req.body.colors)
     const {name, product_type, description, price, discounted_price, discounted_business_price, category_ids, colors} = req.body
     try {
+
       let query = util.promisify(db.query).bind(db); 
       const productsql = 'INSERT INTO Products (name, product_type, description, price, discounted_price, discounted_business_price) VALUES (?, ?, ?, ?, ?, ?)';
+
+      // query and check if product already exists
+      const checkProductQuery = 'SELECT product_id FROM Products WHERE name = ? AND product_type = ? AND description = ?';
+      const checkProductResult = await query(checkProductQuery, [name, product_type, description]);
+      if (checkProductResult.length > 0) {
+        let prodId = checkProductResult[0].product_id
+        console.log("Product already exists")
+        res.status(409).json({ 
+          message: 'Product already exists',
+          product_id: prodId
+        });
+        return; 
+      }
+
       const addProductResult = await query(productsql, [name, product_type, description, price, discounted_price, discounted_business_price]); 
 
       if (addProductResult.affectedRows == 0) {
@@ -487,7 +502,10 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
         } 
       }
 
-      res.status(200).json({message : "added product"})
+      res.status(200).json({
+        message : "added product",
+        product_id : product_id
+      })
     } catch (error) {
       console.log(error)
       res.status(500).json({ message: 'Server error' });
@@ -496,11 +514,61 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
 
 })
 
+app.post('/deleteproduct', verifyAdminAuth, async(req, res) => {
+  console.log("in delete product")
+  let db = await createConnection();
+
+  const { product_id } = req.body;
+  
+  try {
+    console.log('prodid: ', product_id)
+    if (!product_id || isNaN(Number(product_id))) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    const deleteSql = 'UPDATE Products SET inventory_count = 0 WHERE product_id = ?';
+    db.query(deleteSql, [Number(product_id)], (err, result) => {
+      if (err) {
+        console.error('Error deleting product:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'No product found with the given ID' });
+      }
+
+      res.status(200).json({ message: 'Product deleted successfully!' });
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+
+});
+
+app.post('/updateinventory', verifyAdminAuth, async(req, res) => {
+  let db = await createConnection();
+  const {product_id, quantity} = req.body
+  try {
+    const sql = 'UPDATE Products SET inventory_count = inventory_count + ? WHERE product_id = ?';
+    db.query(sql, [quantity, product_id], (err, result) => {
+      if (err) {
+        console.error('Error updating inventory:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(200).json({ message: 'Inventory updated successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
 app.get('/products', async(req, res) => {
   try {
     let db = await createConnection();
 
-    const productDetailsQuery = `SELECT 
+    const productDetailsQuery = `
+    SELECT 
     p.product_id,
     p.name,
     p.product_type,
@@ -508,6 +576,7 @@ app.get('/products', async(req, res) => {
     p.price,
     p.discounted_price,
     p.discounted_business_price,
+    p.inventory_count,
     GROUP_CONCAT(DISTINCT c.category_name) AS categories,
     (
         SELECT JSON_ARRAYAGG(image)
@@ -533,15 +602,17 @@ app.get('/products', async(req, res) => {
             WHERE pcm2.product_id = p.product_id
         ) AS sub_clr
     ) AS colors
-FROM 
-    Products p
-LEFT JOIN 
-    ProductCategoryMappings pcm ON p.product_id = pcm.product_id
-LEFT JOIN 
-    Categories c ON pcm.category_id = c.category_id
-GROUP BY 
-    p.product_id;
-`; 
+    FROM 
+        Products p
+    LEFT JOIN 
+        ProductCategoryMappings pcm ON p.product_id = pcm.product_id
+    LEFT JOIN 
+        Categories c ON pcm.category_id = c.category_id
+    WHERE 
+        p.inventory_count > 0
+    GROUP BY 
+        p.product_id;
+    `; 
     let query = util.promisify(db.query).bind(db); 
     try {
       let rows = await query(productDetailsQuery)
@@ -555,6 +626,7 @@ GROUP BY
           price: row.price,
           discounted_price: row.discounted_price,
           discounted_business_price: row.discounted_business_price,
+          inventory_count: row.inventory_count,
           categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
           images: row.images,              // Convert comma-separated string to array
           colors: row.colors                               // Colors already returned as JSON array

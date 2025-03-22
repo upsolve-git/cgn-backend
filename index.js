@@ -470,15 +470,25 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
         } 
       }
 
-      for (let i =0; i< colors_id.length; i++) {
-        const productcolormappingquery = 'INSERT INTO ProductColorMappings(product_id, color_id) VALUES(?,?)' 
-        const result = await query(productcolormappingquery, [product_id, colors_id[i]]) 
-        if(result.affectedRows == 0) {
-          console.log("failed in mapping products")
-          res.status(500).json({ message: 'Failed to add product' });
-          return; 
-        } 
-      } 
+      // For products with colors
+      if (colors_id.length > 0) {
+        for (let i = 0; i < colors_id.length; i++) {
+          const productcolormappingquery = 'INSERT INTO ProductColorMappings(product_id, color_id) VALUES(?,?)';
+          const result = await query(productcolormappingquery, [product_id, colors_id[i]]);
+          
+          if (result.affectedRows == 0) {
+            console.log("failed in mapping products");
+            res.status(500).json({ message: 'Failed to add product' });
+            return;
+          }
+          const inventoryInsertQuery = 'INSERT INTO Inventory(product_id, color_id, quantity) VALUES (?, ?, ?)';
+          await query(inventoryInsertQuery, [product_id, colors_id[i], 0]);
+        }
+      } else {
+        // For products with no colors
+        const inventoryInsertQuery = 'INSERT INTO Inventory(product_id, color_id, quantity) VALUES (?, NULL, ?)';
+        await query(inventoryInsertQuery, [product_id, 0]);
+      }
 
       const files = req.files
       let locations = [];
@@ -525,7 +535,7 @@ app.post('/deleteproduct', verifyAdminAuth, async(req, res) => {
     if (!product_id || isNaN(Number(product_id))) {
       return res.status(400).json({ message: 'Invalid product ID' });
     }
-    const deleteSql = 'UPDATE Products SET inventory_count = 0 WHERE product_id = ?';
+    const deleteSql = 'UPDATE Inventory SET quantity = 0 WHERE product_id = ?';
     db.query(deleteSql, [Number(product_id)], (err, result) => {
       if (err) {
         console.error('Error deleting product:', err);
@@ -549,7 +559,10 @@ app.post('/updateinventory', verifyAdminAuth, async(req, res) => {
   let db = await createConnection();
   const {product_id, quantity} = req.body
   try {
-    const sql = 'UPDATE Products SET inventory_count = inventory_count + ? WHERE product_id = ?';
+    const sql = `
+      UPDATE Inventory 
+      SET quantity = quantity + ? 
+      WHERE product_id = ?`;
     db.query(sql, [quantity, product_id], (err, result) => {
       if (err) {
         console.error('Error updating inventory:', err);
@@ -576,7 +589,9 @@ app.get('/products', async(req, res) => {
     p.price,
     p.discounted_price,
     p.discounted_business_price,
-    p.inventory_count,
+    (
+      SELECT SUM(quantity) FROM Inventory inv WHERE inv.product_id = p.product_id
+    ) AS inventory_count,
     GROUP_CONCAT(DISTINCT c.category_name) AS categories,
     (
         SELECT JSON_ARRAYAGG(image)
@@ -609,7 +624,10 @@ app.get('/products', async(req, res) => {
     LEFT JOIN 
         Categories c ON pcm.category_id = c.category_id
     WHERE 
-        p.inventory_count > 0
+      (
+        SELECT SUM(quantity) FROM Inventory inv 
+        WHERE inv.product_id = p.product_id
+      ) > 0
     GROUP BY 
         p.product_id;
     `; 
@@ -977,8 +995,21 @@ mobile = ?`
         for(const item of cartItems) {
           const createOrderLineQuery = "INSERT INTO OrderLine(order_id, product_id, quantity, color_id) VALUES(?,?,?,?)"
           await query(createOrderLineQuery, [order_id, item.product_id, item.quantity, item.color_id])
+          
+          const reduceInventoryQuery = `
+            UPDATE Inventory
+            SET quantity = quantity - ?
+            WHERE product_id = ? AND (color_id <=> ?) AND quantity >= ?`;
+      
+          const inventoryResult = await query(reduceInventoryQuery, [item.quantity, item.product_id, item.color_id, item.quantity]);
+      
+          if (inventoryResult.affectedRows === 0) {
+            console.error(`Insufficient inventory for product_id ${item.product_id}, color_id ${item.color_id}`);
+            return res.status(400).json({ message: 'Insufficient inventory for one or more products.' });
+          }
         }
       }
+
       const clearCart = "DELETE from CartItems where user_id = ?"
       await query(clearCart, [req.user.id])
       res.status(200).json({"order_id": order_id})

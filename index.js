@@ -662,6 +662,44 @@ app.get('/products', async(req, res) => {
   }
 })
 
+app.get('/productquantity/:product_id', async (req, res) => {
+  const { product_id } = req.params;
+
+  if (isNaN(product_id)) {
+    return res.status(400).json({ message: 'Invalid product_id' });
+  }
+
+  try {
+    let db = await createConnection();
+    
+    const colorCountQuery = `
+      SELECT 
+        clr.color_name, 
+        clr.shade_name, 
+        COUNT(*) AS color_count
+      FROM 
+        ProductColorMappings pcm
+      JOIN 
+        Colors clr ON pcm.color_id = clr.color_id
+      JOIN 
+        Inventory inv ON inv.product_id = pcm.product_id AND inv.color_id = clr.color_id
+      WHERE 
+        pcm.product_id = ?
+      GROUP BY 
+        clr.color_name, clr.shade_name;
+    `;
+
+    let query = util.promisify(db.query).bind(db);
+    let rows = await query(colorCountQuery, [product_id]);
+
+    // Return the result
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching color counts:', error.stack);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 app.post('/addcategory', verifyAdminAuth, async(req, res) => {
   const {category_name} = req.body
   try {
@@ -952,15 +990,15 @@ app.post('/placeorder', verifyAuth, async(req, res) => {
     const {payment_id, address, cartItems} = req.body
 
     const checkAddress = `SELECT * from Address where 
-user_id = ? AND
-full_name = ? AND
-address_line1 = ? AND
-address_line2 = ? AND
-city = ? AND
-state = ? AND
-country = ? AND
-pincode = ? AND
-mobile = ?`
+    user_id = ? AND
+    full_name = ? AND
+    address_line1 = ? AND
+    address_line2 = ? AND
+    city = ? AND
+    state = ? AND
+    country = ? AND
+    pincode = ? AND
+    mobile = ?`
 
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -995,7 +1033,7 @@ mobile = ?`
         for(const item of cartItems) {
           const createOrderLineQuery = "INSERT INTO OrderLine(order_id, product_id, quantity, color_id) VALUES(?,?,?,?)"
           await query(createOrderLineQuery, [order_id, item.product_id, item.quantity, item.color_id])
-          
+
           const reduceInventoryQuery = `
             UPDATE Inventory
             SET quantity = quantity - ?

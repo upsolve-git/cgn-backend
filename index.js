@@ -85,7 +85,7 @@ app.post('/signup', async (req, res) => {
 });
 
 app.post('/login', async(req, res) => {
-  const { email, password } = req.body;
+  const { email, password, accType } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ message: 'Email and password are required.' });
@@ -100,15 +100,22 @@ app.post('/login', async(req, res) => {
     }
 
     if (results.length === 0) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      console.log("in results")
+      return res.status(401).json({ message: 'Invalid email' });
     }
-
-    const user = results[0];
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      console.log("in password")
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
+
+    if(results[0].account_type !== accType) {
+      console.log("in account type")
+      return res.status(403).json({ message: 'Incorrect account type' });
+    }
+
+    const user = results[0];
 
     const token = generateToken(user.user_id, user.email);
     console.log(token)

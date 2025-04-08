@@ -127,7 +127,7 @@ app.post('/login', async(req, res) => {
       path: '/' // Ensure the cookie is set for all paths
     });
 
-  res.status(200).json({ message: 'Login successful!' });
+  res.status(200).json({ message: 'Login successful!', role: user.account_type });
   });
 });
 
@@ -214,7 +214,7 @@ app.post('/auth/google', async (req, res) => {
           path: '/' // Ensure the cookie is set for all paths
         });
     
-      res.status(200).json({ message: 'Login successful!' });
+      res.status(200).json({ message: 'Login successful!', role: user.account_type });
       } else {
         const insertSql = 'INSERT INTO Users (email, first_name, last_name, account_type) VALUES (?, ?, ?, ?)';
         db.query(insertSql, [email, first_name, last_name, "Personal"], (err, result) => {
@@ -232,7 +232,7 @@ app.post('/auth/google', async (req, res) => {
             path: '/' // Ensure the cookie is set for all paths
           });
       
-        res.status(200).json({ message: 'Login successful!' });
+        res.status(200).json({ message: 'Login successful!', role: "Personal" });
         });
       }
     });

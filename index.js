@@ -103,6 +103,7 @@ app.post('/login', async(req, res) => {
       console.log("in results")
       return res.status(401).json({ message: 'Invalid email' });
     }
+    const user = results[0];
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
@@ -115,7 +116,6 @@ app.post('/login', async(req, res) => {
       return res.status(403).json({ message: 'Incorrect account type' });
     }
 
-    const user = results[0];
 
     const token = generateToken(user.user_id, user.email);
     console.log(token)

@@ -14,6 +14,7 @@ const paypal = require('@paypal/checkout-server-sdk');
 const { clear } = require('console');
 const Mail = require('./mail');
 const jwt = require('jsonwebtoken');
+const paymentRoutes = require('./routes/paymentRoutes')
 
 
 dotenv.config()
@@ -49,6 +50,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(cookieParser());
+app.use("/api/payment", paymentRoutes);
 
 
 let environment = new paypal.core.SandboxEnvironment('AXe6TRZyyOvPyk-LJfTnjVRfhgrqUrShjru1GlfCf96laO8aWKMEUO47kmT509bmygakZi61FxrM13i5', 'EMZMzo1Q67oDQ1mMQKKl8vL09_W0DwEwlGi-rdMvWhBxE5xzx7fp_9Ruq2ndJBSkvcggYPs65_KmiB2S');
@@ -120,7 +122,7 @@ app.post('/login', async(req, res) => {
       path: '/' // Ensure the cookie is set for all paths
     });
 
-  res.status(200).json({ message: 'Login successful!' });
+  res.status(200).json({ message: 'Login successful!', role: user.account_type });
   });
 });
 
@@ -207,7 +209,7 @@ app.post('/auth/google', async (req, res) => {
           path: '/' // Ensure the cookie is set for all paths
         });
     
-      res.status(200).json({ message: 'Login successful!' });
+      res.status(200).json({ message: 'Login successful!', role: user.account_type });
       } else {
         const insertSql = 'INSERT INTO Users (email, first_name, last_name, account_type) VALUES (?, ?, ?, ?)';
         db.query(insertSql, [email, first_name, last_name, "Personal"], (err, result) => {
@@ -225,7 +227,7 @@ app.post('/auth/google', async (req, res) => {
             path: '/' // Ensure the cookie is set for all paths
           });
       
-        res.status(200).json({ message: 'Login successful!' });
+        res.status(200).json({ message: 'Login successful!', role: "Personal" });
         });
       }
     });
@@ -1205,6 +1207,24 @@ app.get('/getreviews', verifyAuth, async(req, res) => {
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error getting reviews', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json(result);
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get('/getallmemberships', async(req, res) => {
+  try {
+    let db = await createConnection();
+
+    const sql = 'SELECT * from Memberships';
+    db.query(sql, (err, result) => {
+      if (err) {
+        console.error('Error getting memberships', err);
         return res.status(500).json({ message: 'Database error' });
       }
       res.status(201).json(result);

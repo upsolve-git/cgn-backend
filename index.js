@@ -14,6 +14,7 @@ const paypal = require('@paypal/checkout-server-sdk');
 const { clear } = require('console');
 const Mail = require('./mail');
 const jwt = require('jsonwebtoken');
+const paymentRoutes = require('./routes/paymentRoutes')
 
 
 dotenv.config()
@@ -49,6 +50,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.use(cookieParser());
+app.use("/api/payment", paymentRoutes);
 
 
 let environment = new paypal.core.SandboxEnvironment('AXe6TRZyyOvPyk-LJfTnjVRfhgrqUrShjru1GlfCf96laO8aWKMEUO47kmT509bmygakZi61FxrM13i5', 'EMZMzo1Q67oDQ1mMQKKl8vL09_W0DwEwlGi-rdMvWhBxE5xzx7fp_9Ruq2ndJBSkvcggYPs65_KmiB2S');
@@ -92,8 +94,8 @@ app.post('/login', async(req, res) => {
   }
 
   let db = await createConnection();
-  const sql = 'SELECT * FROM Users WHERE email = ?';
-  db.query(sql, [email], async (err, results) => {
+  const sql = 'SELECT * FROM Users WHERE email = ? and account_type =?';
+  db.query(sql, [email, accType], async (err, results) => {
     if (err) {
       console.error('Error finding user:', err);
       return res.status(500).json({ message: 'Database error' });
@@ -1353,6 +1355,24 @@ app.get('/getreviews', verifyAuth, async(req, res) => {
     db.query(sql, [product_id], (err, result) => {
       if (err) {
         console.error('Error getting reviews', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json(result);
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
+app.get('/getallmemberships', async(req, res) => {
+  try {
+    let db = await createConnection();
+
+    const sql = 'SELECT * from Memberships';
+    db.query(sql, (err, result) => {
+      if (err) {
+        console.error('Error getting memberships', err);
         return res.status(500).json({ message: 'Database error' });
       }
       res.status(201).json(result);

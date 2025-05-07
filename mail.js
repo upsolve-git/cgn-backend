@@ -82,7 +82,7 @@ const sendMail = async(name, email, feedback) => {
   
       const mailConfigurations = {
         from: process.env.EMAIL,
-        to: process.env.EMAIL,
+        to: process.env.TOEMAIL,
         subject:"Feedback",
         html:feedbackNotificationTemplate(name, email, feedback)
       };

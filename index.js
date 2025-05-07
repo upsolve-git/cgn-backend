@@ -102,16 +102,20 @@ app.post('/login', async(req, res) => {
     }
 
     if (results.length === 0) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      console.log("in results")
+      return res.status(401).json({ message: 'Invalid email' });
     }
-
     const user = results[0];
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid email or password.' });
+      console.log("in password")
+      return res.status(401).json({ message: 'Invalid email or password' });
     }
-
+   if(results[0].account_type !== accType) {
+      console.log("in account type")
+      return res.status(403).json({ message: 'Incorrect account type' });
+    }
     const getmembership = 'SELECT * FROM UserMembershipMapping WHERE customer_id = ?'
     db.query(getmembership, [req.user.id], async(err, results) => {
       if (err) {
@@ -409,7 +413,7 @@ app.get('/landingpage', async(req, res) => {
   return res.status(200).json({"bestSellers" : bestSellingProducts, "newSellers" : newproducts})
 })
 
-app.post('/addproduct', verifyAdminAuth, async(req, res) => { 
+app.post('/addproduct', verifyAdminAuth, async(req, res) => {
   let db = await createConnection();
 
   upload(req, res, async function (err) {
@@ -424,8 +428,23 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
     console.log(req.body.colors)
     const {name, product_type, description, price, discounted_price, discounted_business_price, category_ids, colors} = req.body
     try {
+
       let query = util.promisify(db.query).bind(db); 
       const productsql = 'INSERT INTO Products (name, product_type, description, price, discounted_price, discounted_business_price) VALUES (?, ?, ?, ?, ?, ?)';
+
+      // query and check if product already exists
+      const checkProductQuery = 'SELECT product_id FROM Products WHERE name = ? AND product_type = ? AND description = ?';
+      const checkProductResult = await query(checkProductQuery, [name, product_type, description]);
+      if (checkProductResult.length > 0) {
+        let prodId = checkProductResult[0].product_id
+        console.log("Product already exists")
+        res.status(409).json({ 
+          message: 'Product already exists',
+          product_id: prodId
+        });
+        return; 
+      }
+
       const addProductResult = await query(productsql, [name, product_type, description, price, discounted_price, discounted_business_price]); 
 
       if (addProductResult.affectedRows == 0) {
@@ -468,15 +487,25 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
         } 
       }
 
-      for (let i =0; i< colors_id.length; i++) {
-        const productcolormappingquery = 'INSERT INTO ProductColorMappings(product_id, color_id) VALUES(?,?)' 
-        const result = await query(productcolormappingquery, [product_id, colors_id[i]]) 
-        if(result.affectedRows == 0) {
-          console.log("failed in mapping products")
-          res.status(500).json({ message: 'Failed to add product' });
-          return; 
-        } 
-      } 
+      // For products with colors
+      if (colors_id.length > 0) {
+        for (let i = 0; i < colors_id.length; i++) {
+          const productcolormappingquery = 'INSERT INTO ProductColorMappings(product_id, color_id) VALUES(?,?)';
+          const result = await query(productcolormappingquery, [product_id, colors_id[i]]);
+          
+          if (result.affectedRows == 0) {
+            console.log("failed in mapping products");
+            res.status(500).json({ message: 'Failed to add product' });
+            return;
+          }
+          const inventoryInsertQuery = 'INSERT INTO Inventory(product_id, color_id, quantity) VALUES (?, ?, ?)';
+          await query(inventoryInsertQuery, [product_id, colors_id[i], 0]);
+        }
+      } else {
+        // For products with no colors
+        const inventoryInsertQuery = 'INSERT INTO Inventory(product_id, color_id, quantity) VALUES (?, NULL, ?)';
+        await query(inventoryInsertQuery, [product_id, 0]);
+      }
 
       const files = req.files
       let locations = [];
@@ -500,7 +529,10 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
         } 
       }
 
-      res.status(200).json({message : "added product"})
+      res.status(200).json({
+        message : "added product",
+        product_id : product_id
+      })
     } catch (error) {
       console.log(error)
       res.status(500).json({ message: 'Server error' });
@@ -509,11 +541,64 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
 
 })
 
+app.post('/deleteproduct', verifyAdminAuth, async(req, res) => {
+  console.log("in delete product")
+  let db = await createConnection();
+
+  const { product_id } = req.body;
+  
+  try {
+    console.log('prodid: ', product_id)
+    if (!product_id || isNaN(Number(product_id))) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    const deleteSql = 'UPDATE Inventory SET quantity = 0 WHERE product_id = ?';
+    db.query(deleteSql, [Number(product_id)], (err, result) => {
+      if (err) {
+        console.error('Error deleting product:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'No product found with the given ID' });
+      }
+
+      res.status(200).json({ message: 'Product deleted successfully!' });
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+
+});
+
+app.post('/updateinventory', verifyAdminAuth, async(req, res) => {
+  let db = await createConnection();
+  const {product_id, quantity} = req.body
+  try {
+    const sql = `
+      UPDATE Inventory 
+      SET quantity = quantity + ? 
+      WHERE product_id = ?`;
+    db.query(sql, [quantity, product_id], (err, result) => {
+      if (err) {
+        console.error('Error updating inventory:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(200).json({ message: 'Inventory updated successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+})
+
 app.get('/products', async(req, res) => {
   try {
     let db = await createConnection();
 
-    const productDetailsQuery = `SELECT 
+    const productDetailsQuery = `
+    SELECT 
     p.product_id,
     p.name,
     p.product_type,
@@ -521,6 +606,9 @@ app.get('/products', async(req, res) => {
     p.price,
     p.discounted_price,
     p.discounted_business_price,
+    (
+      SELECT SUM(quantity) FROM Inventory inv WHERE inv.product_id = p.product_id
+    ) AS inventory_count,
     GROUP_CONCAT(DISTINCT c.category_name) AS categories,
     (
         SELECT JSON_ARRAYAGG(image)
@@ -546,15 +634,20 @@ app.get('/products', async(req, res) => {
             WHERE pcm2.product_id = p.product_id
         ) AS sub_clr
     ) AS colors
-FROM 
-    Products p
-LEFT JOIN 
-    ProductCategoryMappings pcm ON p.product_id = pcm.product_id
-LEFT JOIN 
-    Categories c ON pcm.category_id = c.category_id
-GROUP BY 
-    p.product_id;
-`; 
+    FROM 
+        Products p
+    LEFT JOIN 
+        ProductCategoryMappings pcm ON p.product_id = pcm.product_id
+    LEFT JOIN 
+        Categories c ON pcm.category_id = c.category_id
+    WHERE 
+      (
+        SELECT SUM(quantity) FROM Inventory inv 
+        WHERE inv.product_id = p.product_id
+      ) > 0
+    GROUP BY 
+        p.product_id;
+    `; 
     let query = util.promisify(db.query).bind(db); 
     try {
       let rows = await query(productDetailsQuery)
@@ -568,6 +661,7 @@ GROUP BY
           price: row.price,
           discounted_price: row.discounted_price,
           discounted_business_price: row.discounted_business_price,
+          inventory_count: row.inventory_count,
           categories: row.categories ? row.categories.split(',') : [],  // Convert comma-separated string to array
           images: row.images,              // Convert comma-separated string to array
           colors: row.colors                               // Colors already returned as JSON array
@@ -584,6 +678,44 @@ GROUP BY
     res.status(500).json({ message: 'Server error' });
   }
 })
+
+app.get('/productquantity/:product_id', async (req, res) => {
+  const { product_id } = req.params;
+
+  if (isNaN(product_id)) {
+    return res.status(400).json({ message: 'Invalid product_id' });
+  }
+
+  try {
+    let db = await createConnection();
+    
+    const colorCountQuery = `
+      SELECT 
+        clr.color_name, 
+        clr.shade_name, 
+        COUNT(*) AS color_count
+      FROM 
+        ProductColorMappings pcm
+      JOIN 
+        Colors clr ON pcm.color_id = clr.color_id
+      JOIN 
+        Inventory inv ON inv.product_id = pcm.product_id AND inv.color_id = clr.color_id
+      WHERE 
+        pcm.product_id = ?
+      GROUP BY 
+        clr.color_name, clr.shade_name;
+    `;
+
+    let query = util.promisify(db.query).bind(db);
+    let rows = await query(colorCountQuery, [product_id]);
+
+    // Return the result
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error('Error fetching color counts:', error.stack);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 
 app.post('/addcategory', verifyAdminAuth, async(req, res) => {
   const {category_name} = req.body
@@ -875,15 +1007,15 @@ app.post('/placeorder', verifyAuth, async(req, res) => {
     const {payment_id, address, cartItems} = req.body
 
     const checkAddress = `SELECT * from Address where 
-user_id = ? AND
-full_name = ? AND
-address_line1 = ? AND
-address_line2 = ? AND
-city = ? AND
-state = ? AND
-country = ? AND
-pincode = ? AND
-mobile = ?`
+    user_id = ? AND
+    full_name = ? AND
+    address_line1 = ? AND
+    address_line2 = ? AND
+    city = ? AND
+    state = ? AND
+    country = ? AND
+    pincode = ? AND
+    mobile = ?`
 
     let query = util.promisify(db.query).bind(db); 
     try {
@@ -918,8 +1050,21 @@ mobile = ?`
         for(const item of cartItems) {
           const createOrderLineQuery = "INSERT INTO OrderLine(order_id, product_id, quantity, color_id) VALUES(?,?,?,?)"
           await query(createOrderLineQuery, [order_id, item.product_id, item.quantity, item.color_id])
+
+          const reduceInventoryQuery = `
+            UPDATE Inventory
+            SET quantity = quantity - ?
+            WHERE product_id = ? AND (color_id <=> ?) AND quantity >= ?`;
+      
+          const inventoryResult = await query(reduceInventoryQuery, [item.quantity, item.product_id, item.color_id, item.quantity]);
+      
+          if (inventoryResult.affectedRows === 0) {
+            console.error(`Insufficient inventory for product_id ${item.product_id}, color_id ${item.color_id}`);
+            return res.status(400).json({ message: 'Insufficient inventory for one or more products.' });
+          }
         }
       }
+
       const clearCart = "DELETE from CartItems where user_id = ?"
       await query(clearCart, [req.user.id])
       res.status(200).json({"order_id": order_id})

@@ -689,21 +689,37 @@ app.get('/productquantity/:product_id', async (req, res) => {
   try {
     let db = await createConnection();
     
+    // const colorCountQuery = `
+    //   SELECT 
+    //     clr.color_name, 
+    //     clr.shade_name, 
+    //     COUNT(*) AS color_count
+    //   FROM 
+    //     ProductColorMappings pcm
+    //   JOIN 
+    //     Colors clr ON pcm.color_id = clr.color_id
+    //   JOIN 
+    //     Inventory inv ON inv.product_id = pcm.product_id AND inv.color_id = clr.color_id
+    //   WHERE 
+    //     pcm.product_id = ?
+    //   GROUP BY 
+    //     clr.color_name, clr.shade_name;
+    // `;
     const colorCountQuery = `
       SELECT 
-        clr.color_name, 
-        clr.shade_name, 
-        COUNT(*) AS color_count
-      FROM 
-        ProductColorMappings pcm
-      JOIN 
-        Colors clr ON pcm.color_id = clr.color_id
-      JOIN 
-        Inventory inv ON inv.product_id = pcm.product_id AND inv.color_id = clr.color_id
-      WHERE 
-        pcm.product_id = ?
+        clr.color_name,
+        clr.shade_name,
+        SUM(inv.quantity) AS color_count
+      FROM ProductColorMappings pcm
+        JOIN Colors clr 
+          ON pcm.color_id = clr.color_id
+        JOIN Inventory inv 
+          ON inv.product_id = pcm.product_id 
+        AND inv.color_id   = clr.color_id
+      WHERE pcm.product_id = ?
       GROUP BY 
-        clr.color_name, clr.shade_name;
+        clr.color_name,
+        clr.shade_name;
     `;
 
     let query = util.promisify(db.query).bind(db);

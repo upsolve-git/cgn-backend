@@ -112,17 +112,28 @@ app.post('/login', async(req, res) => {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
 
-    const token = generateToken(user.user_id, user.email);
-    console.log(token)
-    res.cookie('cgntoken', token, {
-      httpOnly: true,
-      secure: true, // Change to true if using HTTPS
-      sameSite: 'None',
-      maxAge: 3600000,
-      path: '/' // Ensure the cookie is set for all paths
-    });
-
-  res.status(200).json({ message: 'Login successful!', role: user.account_type });
+    const getmembership = 'SELECT * FROM UserMembershipMapping WHERE customer_id = ?'
+    db.query(getmembership, [req.user.id], async(err, results) => {
+      if (err) {
+        console.error('Error finding user:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      let member = "true";
+      if (results.length === 0) {
+        member = "false";
+      }
+      const token = generateToken(user.user_id, user.email);
+      console.log(token)
+      res.cookie('cgntoken', token, {
+        httpOnly: true,
+        secure: true, // Change to true if using HTTPS
+        sameSite: 'None',
+        maxAge: 3600000,
+        path: '/' // Ensure the cookie is set for all paths
+      });
+  
+      res.status(200).json({ message: 'Login successful!', role: user.account_type, isMember: member});
+    })
   });
 });
 
@@ -1075,7 +1086,7 @@ GROUP BY
 ORDER BY 
     o.order_id;
     `;
-    const rows = await query(getOrdersQuery, [req.user.id])
+    const rows = await query(getOrdersQuery, [id])
 
     if (rows.length === 0) {
         return null; // No order found
@@ -1552,6 +1563,26 @@ app.post('/resetpassword/:token',async(req,res)=>{
     res.status(500).json({ message: "Server error" });
   }
 })
+
+app.post('/addmembership', verifyAdminAuth, async(req, res) => {
+  const {membership_id} = req.body
+  try {
+    let db = await createConnection();
+
+    const sql = 'INSERT INTO UserMembershipMapping (customer_id, membership_id) VALUES (?, ?)';
+    db.query(sql, [req.user.id, membership_id], (err, result) => {
+      if (err) {
+        console.error('Error inserting mappping:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'membership added successfully!' });
+    });
+  } catch (error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  }
+}) 
+
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {

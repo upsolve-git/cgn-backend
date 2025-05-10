@@ -117,7 +117,7 @@ app.post('/login', async(req, res) => {
       return res.status(403).json({ message: 'Incorrect account type' });
     }
     const getmembership = 'SELECT * FROM UserMembershipMapping WHERE customer_id = ?'
-    db.query(getmembership, [req.user.id], async(err, results) => {
+    db.query(getmembership, [user.user_id], async(err, results) => {
       if (err) {
         console.error('Error finding user:', err);
         return res.status(500).json({ message: 'Database error' });

@@ -541,6 +541,198 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
 
 })
 
+app.get('/product/:product_id', async (req, res) => {
+  const { product_id } = req.params;
+  if (isNaN(product_id)) {
+    return res.status(400).json({ message: 'Invalid product_id' });
+  }
+
+  try {
+    const db = await createConnection();
+    const query = util.promisify(db.query).bind(db);
+
+    const sql = `
+      SELECT 
+        p.product_id,
+        p.name,
+        p.product_type,
+        p.description,
+        p.price,
+        p.discounted_price,
+        p.discounted_business_price,
+        (
+          SELECT SUM(quantity) 
+          FROM Inventory inv 
+          WHERE inv.product_id = p.product_id
+        ) AS inventory_count,
+        GROUP_CONCAT(DISTINCT c.category_name) AS categories,
+        (
+          SELECT JSON_ARRAYAGG(image)
+          FROM (
+            SELECT DISTINCT pi.image 
+            FROM ProductImages pi 
+            WHERE pi.product_id = p.product_id
+          ) AS sub_images
+        ) AS images,
+        (
+          SELECT JSON_ARRAYAGG(
+            JSON_OBJECT(
+              'color_id', clr.color_id,
+              'color_name', clr.color_name,
+              'shade_name', clr.shade_name,
+              'code', clr.code,
+              'quantity', inv.quantity
+            )
+          )
+          FROM ProductColorMappings pcm
+          JOIN Colors clr ON pcm.color_id = clr.color_id
+          JOIN Inventory inv 
+            ON inv.product_id = pcm.product_id 
+           AND inv.color_id   = clr.color_id
+          WHERE pcm.product_id = p.product_id
+        ) AS colors
+      FROM Products p
+      LEFT JOIN ProductCategoryMappings pcm 
+        ON p.product_id = pcm.product_id
+      LEFT JOIN Categories c 
+        ON pcm.category_id = c.category_id
+      WHERE p.product_id = ?
+      GROUP BY p.product_id;
+    `;
+
+    const rows = await query(sql, [product_id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const row = rows[0];
+    res.json({
+      product_id:                row.product_id,
+      name:                      row.name,
+      product_type:              row.product_type,
+      description:               row.description,
+      price:                     row.price,
+      discounted_price:          row.discounted_price,
+      discounted_business_price: row.discounted_business_price,
+      inventory_count:           row.inventory_count,
+      categories:                row.categories ? row.categories.split(',') : [],
+      images:                    row.images || [],
+      colors:                    row.colors || []
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+app.put('/product/:product_id', verifyAdminAuth, async (req, res) => {
+  const { product_id } = req.params;
+  const {
+    name,
+    description,
+    price,
+    discounted_price,
+    discounted_business_price,
+    category_ids,  
+    colors           
+  } = req.body;
+
+  const db = await createConnection();
+  const query = util.promisify(db.query).bind(db);
+
+  try {
+    await query(
+      `UPDATE Products
+         SET name = ?, description = ?, price = ?, discounted_price = ?, discounted_business_price = ?
+       WHERE product_id = ?`,
+      [name, description, price, discounted_price, discounted_business_price, product_id]
+    );
+
+    await query(`DELETE FROM ProductCategoryMappings WHERE product_id = ?`, [product_id]);
+    for (let catId of category_ids) {
+      await query(
+        `INSERT INTO ProductCategoryMappings(category_id, product_id) VALUES (?,?)`,
+        [catId, product_id]
+      );
+    }
+
+    
+    const incomingIds = colors.filter(c => c.color_id).map(c => c.color_id);
+    if (incomingIds.length) {
+      await query(
+        `DELETE pcm
+           FROM ProductColorMappings pcm
+          WHERE pcm.product_id = ?
+            AND pcm.color_id NOT IN (?)`,
+        [product_id, incomingIds]
+      );
+    }
+
+    for (let c of colors) {
+      if (c.color_id) {
+        await query(
+          `UPDATE Colors SET color_name = ?, shade_name = ?, code = ? WHERE color_id = ?`,
+          [c.color_name, c.shade_name, c.code, c.color_id]
+        );
+        await query(
+          `UPDATE Inventory SET quantity = ? WHERE product_id = ? AND color_id = ?`,
+          [c.inventory, product_id, c.color_id]
+        );
+      } else {
+        const result = await query(
+          `INSERT INTO Colors(color_name, shade_name, code) VALUES (?,?,?)`,
+          [c.color_name, c.shade_name, c.code]
+        );
+        const newColorId = result.insertId;
+        await query(
+          `INSERT INTO ProductColorMappings(product_id, color_id) VALUES (?,?)`,
+          [product_id, newColorId]
+        );
+        await query(
+          `INSERT INTO Inventory(product_id, color_id, quantity) VALUES (?,?,?)`,
+          [product_id, newColorId, c.inventory]
+        );
+      }
+    }
+
+    res.json({ message: 'Product updated successfully' });
+  } catch (err) {
+    console.error('Error updating product:', err);
+    res.status(500).json({ message: 'Product update failed' });
+  }
+});
+
+app.post('/deletecolor', verifyAdminAuth, async (req, res) => {
+  const { product_id, color_id } = req.body;
+  if (!product_id || !color_id || isNaN(Number(product_id)) || isNaN(Number(color_id))) {
+    return res.status(400).json({ message: 'Invalid product_id or color_id' });
+  }
+
+  try {
+    const db = await createConnection();
+    const query = util.promisify(db.query).bind(db);
+
+    const delMapping = await query(
+      'DELETE FROM ProductColorMappings WHERE product_id = ? AND color_id = ?',
+      [product_id, color_id]
+    );
+
+    if (delMapping.affectedRows === 0) {
+      return res.status(404).json({ message: 'Color mapping not found' });
+    }
+
+    await query(
+      'DELETE FROM Inventory WHERE product_id = ? AND color_id = ?',
+      [product_id, color_id]
+    );
+
+    return res.json({ message: 'Color removed from product' });
+  } catch (err) {
+    console.error('Error deleting color:', err);
+    return res.status(500).json({ message: 'Server error deleting color' });
+  }
+});
+
 app.post('/deleteproduct', verifyAdminAuth, async(req, res) => {
   console.log("in delete product")
   let db = await createConnection();

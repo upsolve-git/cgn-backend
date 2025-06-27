@@ -107,10 +107,19 @@ const sendResetMail = async(email, token) => {
     });
 
     const mailConfigurations = {
-      from: process.env.EMAIL,
-      to: email,
-      subject:"Password Reset",
-      html:`<p>Click <a href="${process.env.CLIENT_URL}/auth/resetpassword/${token}">here</a> to reset your password</p>`
+        from: process.env.EMAIL,
+        to: email,
+        subject: "Reset Your Password",
+        html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2>Password Reset Request</h2>
+                <p>Hello,</p>
+                <p>We received a request to reset your password. If you made this request, please click the link below to create a new password:</p>
+                <p><a href="${process.env.CLIENT_URL}/auth/resetpassword/${token}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Reset My Password</a></p>
+                <p>If you didn't request this password reset, please ignore this email. Your password will remain unchanged.</p>
+                <p>Best regards,<br>Canadian Gel Nails</p>
+            </div>
+        `
     };
 
     await transporter.sendMail(mailConfigurations);

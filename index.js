@@ -1605,56 +1605,57 @@ app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
 
     let query = util.promisify(db.query).bind(db); 
     const getOrdersQuery = `SELECT 
-    o.order_id,
-    o.user_id,
-    o.invoice,
-    o.order_status,
-    o.creation_date,
-    o.confirmation_date,
-    o.shipping_date,
-    o.delivered_date,
-    ol.product_id,
-    GROUP_CONCAT(DISTINCT pi.image) AS images, 
-    p.name,
-    ol.quantity,
-    p.price,
-    c.shade_name,
-    c.code,
-    GROUP_CONCAT(DISTINCT cat.category_name) AS categories,  -- Get distinct category names
-    a.address_id,
-    a.full_name,
-    a.address_line1,
-    a.address_line2,
-    a.city,
-    a.state,
-    a.pincode,
-    a.country,
-    a.mobile
-FROM 
-    Orders o
-JOIN 
-    OrderLine ol ON o.order_id = ol.order_id
-JOIN 
-    Products p ON ol.product_id = p.product_id
-LEFT JOIN 
-    ProductImages pi ON p.product_id = pi.product_id
-LEFT JOIN 
-    Colors c ON ol.color_id = c.color_id
-JOIN 
-    ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
-JOIN 
-    Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
-LEFT JOIN 
-    Address a ON o.address_id = a.address_id  -- Join with Address table
-GROUP BY 
-    o.order_id, ol.order_line_id
-ORDER BY 
-    o.order_id;
-    `;
+        o.order_id,
+        o.user_id,
+        o.invoice,
+        o.order_status,
+        o.creation_date,
+        o.confirmation_date,
+        o.shipping_date,
+        o.delivered_date,
+        ol.product_id,
+        GROUP_CONCAT(DISTINCT pi.image) AS images, 
+        p.name,
+        ol.quantity,
+        p.price,
+        c.shade_name,
+        c.code,
+        GROUP_CONCAT(DISTINCT cat.category_name) AS categories,  -- Get distinct category names
+        a.address_id,
+        a.full_name,
+        a.address_line1,
+        a.address_line2,
+        a.city,
+        a.state,
+        a.pincode,
+        a.country,
+        a.mobile
+    FROM 
+        Orders o
+    JOIN 
+        OrderLine ol ON o.order_id = ol.order_id
+    JOIN 
+        Products p ON ol.product_id = p.product_id
+    LEFT JOIN 
+        ProductImages pi ON p.product_id = pi.product_id
+    LEFT JOIN 
+        Colors c ON ol.color_id = c.color_id
+    LEFT JOIN 
+        ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
+    LEFT JOIN 
+        Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
+    LEFT JOIN 
+        Address a ON o.address_id = a.address_id  -- Join with Address table
+    GROUP BY 
+        o.order_id, ol.order_line_id
+    ORDER BY 
+        o.order_id;
+        `;
     const rows = await query(getOrdersQuery)
 
     if (rows.length === 0) {
-        return null; // No order found
+        res.status(400).json({ message: 'No orders found' });
+        return;
     }
     const ordersMap = {};
 

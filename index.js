@@ -1291,6 +1291,7 @@ app.get("/getorders", verifyAuth, async(req, res) => {
     let db = await createConnection();
 
     let query = util.promisify(db.query).bind(db); 
+    console.log("user id: ", req.user.id)
     const getOrdersQuery = `
 SELECT 
     o.order_id,
@@ -1319,9 +1320,9 @@ LEFT JOIN
     ProductImages pi ON p.product_id = pi.product_id
 LEFT JOIN 
     Colors c ON ol.color_id = c.color_id
-JOIN 
+LEFT JOIN 
     ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
-JOIN 
+LEFT JOIN 
     Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
 WHERE 
     o.user_id = ?
@@ -1333,7 +1334,7 @@ ORDER BY
     const rows = await query(getOrdersQuery, [req.user.id])
 
     if (rows.length === 0) {
-        return null; // No order found
+        return res.status(400).json({message:"user orders not found"}); // No order found
     }
     const ordersMap = {};
 
@@ -1442,7 +1443,7 @@ ORDER BY
     const rows = await query(getOrdersQuery, [id])
 
     if (rows.length === 0) {
-        return null; // No order found
+        return res.status(400).json([]);
     }
     const ordersMap = {};
 

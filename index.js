@@ -80,6 +80,9 @@ app.post('/signup', async (req, res) => {
       }
       res.status(201).json({ message: 'User registered successfully!' });
     });
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
@@ -137,7 +140,13 @@ app.post('/login', async(req, res) => {
       });
   
       res.status(200).json({ message: 'Login successful!', role: user.account_type, isMember: member});
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
     })
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   });
 });
 
@@ -178,7 +187,10 @@ app.post('/adminlogin', async(req, res) => {
       path: '/' // Ensure the cookie is set for all paths
     });
 
-  res.status(200).json({ message: 'Login successful!' });
+    res.status(200).json({ message: 'Login successful!' });
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   });
 });
 
@@ -224,7 +236,10 @@ app.post('/auth/google', async (req, res) => {
           path: '/' // Ensure the cookie is set for all paths
         });
     
-      res.status(200).json({ message: 'Login successful!', role: user.account_type });
+        res.status(200).json({ message: 'Login successful!', role: user.account_type });
+        db.end(err => {
+          if (err) console.error('Error closing connection', err);
+        });
       } else {
         const insertSql = 'INSERT INTO Users (email, first_name, last_name, account_type) VALUES (?, ?, ?, ?)';
         db.query(insertSql, [email, first_name, last_name, "Personal"], (err, result) => {
@@ -242,7 +257,10 @@ app.post('/auth/google', async (req, res) => {
             path: '/' // Ensure the cookie is set for all paths
           });
       
-        res.status(200).json({ message: 'Login successful!', role: "Personal" });
+          res.status(200).json({ message: 'Login successful!', role: "Personal" });
+          db.end(err => {
+            if (err) console.error('Error closing connection', err);
+          });
         });
       }
     });
@@ -419,8 +437,14 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
   upload(req, res, async function (err) {
     console.log("in add product")
     if (err instanceof multer.MulterError) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      })
       return res.status(500).json({message : "error in uploading files"})
     } else if (err) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      })
       return res.status(500).json({message : "error in uploading files"})
     } 
 
@@ -536,6 +560,10 @@ app.post('/addproduct', verifyAdminAuth, async(req, res) => {
     } catch (error) {
       console.log(error)
       res.status(500).json({ message: 'Server error' });
+    }finally{
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      })
     }
   });
 
@@ -547,8 +575,9 @@ app.get('/product/:product_id', async (req, res) => {
     return res.status(400).json({ message: 'Invalid product_id' });
   }
 
+  let db;
   try {
-    const db = await createConnection();
+    db = await createConnection();
     const query = util.promisify(db.query).bind(db);
 
     const sql = `
@@ -622,6 +651,10 @@ app.get('/product/:product_id', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
+  }finally{
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    })
   }
 });
 
@@ -699,6 +732,10 @@ app.put('/product/:product_id', verifyAdminAuth, async (req, res) => {
   } catch (err) {
     console.error('Error updating product:', err);
     res.status(500).json({ message: 'Product update failed' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    })
   }
 });
 
@@ -708,8 +745,9 @@ app.post('/deletecolor', verifyAdminAuth, async (req, res) => {
     return res.status(400).json({ message: 'Invalid product_id or color_id' });
   }
 
+  let db;
   try {
-    const db = await createConnection();
+    db = await createConnection();
     const query = util.promisify(db.query).bind(db);
 
     const delMapping = await query(
@@ -730,16 +768,21 @@ app.post('/deletecolor', verifyAdminAuth, async (req, res) => {
   } catch (err) {
     console.error('Error deleting color:', err);
     return res.status(500).json({ message: 'Server error deleting color' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 });
 
 app.post('/deleteproduct', verifyAdminAuth, async(req, res) => {
   console.log("in delete product")
-  let db = await createConnection();
-
+  
   const { product_id } = req.body;
   
+  let db;
   try {
+    db = await createConnection();
     console.log('prodid: ', product_id)
     if (!product_id || isNaN(Number(product_id))) {
       return res.status(400).json({ message: 'Invalid product ID' });
@@ -760,6 +803,10 @@ app.post('/deleteproduct', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 
 });
@@ -782,12 +829,18 @@ app.post('/updateinventory', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 })
 
 app.get('/products', async(req, res) => {
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const productDetailsQuery = `
     SELECT 
@@ -868,6 +921,10 @@ app.get('/products', async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 })
 
@@ -878,8 +935,9 @@ app.get('/productquantity/:product_id', async (req, res) => {
     return res.status(400).json({ message: 'Invalid product_id' });
   }
 
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
     
     // const colorCountQuery = `
     //   SELECT 
@@ -922,13 +980,19 @@ app.get('/productquantity/:product_id', async (req, res) => {
   } catch (error) {
     console.error('Error fetching color counts:', error.stack);
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 });
 
 app.post('/addcategory', verifyAdminAuth, async(req, res) => {
   const {category_name} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'INSERT INTO Categories (category_name) VALUES (?)';
     db.query(sql, [category_name], (err, result) => {
@@ -941,13 +1005,19 @@ app.post('/addcategory', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.post('/deletecategory', verifyAdminAuth, async(req, res) => {
   const {category_id} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'DELETE from Categories where category_id = ?';
     db.query(sql, [category_id], (err, result) => {
@@ -960,12 +1030,18 @@ app.post('/deletecategory', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.get('/categories', async(req, res) => {
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const categoriesQuery = 'SELECT * FROM Categories'; 
     let query = util.promisify(db.query).bind(db); 
@@ -979,13 +1055,19 @@ app.get('/categories', async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.post('/addbestseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'INSERT INTO BestSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
@@ -998,13 +1080,19 @@ app.post('/addbestseller', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.post('/deletebestseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'DELETE from BestSellers where product_id = ?';
     db.query(sql, [product_id], (err, result) => {
@@ -1017,13 +1105,19 @@ app.post('/deletebestseller', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.post('/addnewseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'INSERT INTO NewSellers (product_id) VALUES (?)';
     db.query(sql, [product_id], (err, result) => {
@@ -1036,13 +1130,19 @@ app.post('/addnewseller', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 })
 
 app.post('/deletenewseller', verifyAdminAuth, async(req, res) => {
   const {product_id} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'DELETE from NewSellers where product_id = ?';
     db.query(sql, [product_id], (err, result) => {
@@ -1055,12 +1155,18 @@ app.post('/deletenewseller', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 })
 
 app.get('/users', verifyAdminAuth, async(req, res) => {
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const categoriesQuery = 'SELECT * FROM Users'; 
     let query = util.promisify(db.query).bind(db); 
@@ -1074,12 +1180,18 @@ app.get('/users', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.get('/getcart', verifyAuth, async(req, res) => {
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const cartQuery = `SELECT 
     p.product_id,
@@ -1133,13 +1245,19 @@ GROUP BY
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 })  
 
 app.post('/updateCart', verifyAuth, async(req, res) => {
   const {product_id, quantity, color_id} = req.body
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     console.log(product_id, quantity, color_id)
     let query = util.promisify(db.query).bind(db); 
@@ -1163,12 +1281,18 @@ app.post('/updateCart', verifyAuth, async(req, res) => {
   } catch(error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 })
 
 app.post('/deletefromcart', verifyAuth, async(req, res) => {
+  
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     console.log("in delete cart", req.body)
     let {product_id, color_id} = req.body
@@ -1186,12 +1310,17 @@ app.post('/deletefromcart', verifyAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 }) 
 
 app.get('/defaultaddress', verifyAuth, async(req, res) => {
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const addressQuery = 'SELECT * from Address where user_id = ? AND `default` = true'; 
     let query = util.promisify(db.query).bind(db); 
@@ -1205,12 +1334,19 @@ app.get('/defaultaddress', verifyAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.post('/placeorder', verifyAuth, async(req, res) => {
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const {payment_id, address, cartItems} = req.body
 
@@ -1283,12 +1419,19 @@ app.post('/placeorder', verifyAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.get("/getorders", verifyAuth, async(req, res) => {
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     let query = util.promisify(db.query).bind(db); 
     console.log("user id: ", req.user.id)
@@ -1390,13 +1533,20 @@ ORDER BY
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.get("/order/:id", verifyAuth, async(req, res) => {
   console.log("in get order")
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const { id } = req.params;
     let query = util.promisify(db.query).bind(db); 
@@ -1501,6 +1651,12 @@ ORDER BY
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
@@ -1525,6 +1681,10 @@ app.post('/pay', verifyAuth,async (req, res) => {
     res.json({ id: order.result.id });
   } catch (err) {
     res.status(500).send(err);
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 });
 
@@ -1541,13 +1701,18 @@ app.post('/capture',verifyAuth, async (req, res) => {
     res.json(capture.result);
   } catch (err) {
     res.status(500).send(err);
+  } finally {
+    db.end(err => {
+      if (err) console.error('Error closing connection', err);
+    });
   }
 });
 
 app.post('/addreview', verifyAuth, async(req, res) => {
   const {product_id, review, rating} = req.body
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'INSERT INTO Reviews(user_id, product_id, review_content, review_stars) VALUES(?, ?, ?, ?)';
     db.query(sql, [req.user.id, product_id, review, rating], (err, result) => {
@@ -1560,13 +1725,20 @@ app.post('/addreview', verifyAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.get('/getreviews', verifyAuth, async(req, res) => {
   const {product_id} = req.body
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'SELECT * from Reviews WHERE product_id = ?';
     db.query(sql, [product_id], (err, result) => {
@@ -1579,12 +1751,19 @@ app.get('/getreviews', verifyAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.get('/getallmemberships', async(req, res) => {
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'SELECT * from Memberships';
     db.query(sql, (err, result) => {
@@ -1597,12 +1776,19 @@ app.get('/getallmemberships', async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     let query = util.promisify(db.query).bind(db); 
     const getOrdersQuery = `SELECT 
@@ -1734,13 +1920,20 @@ app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.post('/adminconfirmorder', verifyAdminAuth, async(req, res) => {
   const {order_id} = req.body
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'UPDATE Orders SET order_status = "confirmed" WHERE order_id = ?';
     db.query(sql, [order_id], (err, result) => {
@@ -1753,13 +1946,20 @@ app.post('/adminconfirmorder', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.post('/adminshiporder', verifyAdminAuth, async(req, res) => {
   const {order_id} = req.body
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'UPDATE Orders SET order_status = "shipped" WHERE order_id = ?';
     db.query(sql, [order_id], (err, result) => {
@@ -1772,13 +1972,20 @@ app.post('/adminshiporder', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.post('/admindeliverorder', verifyAdminAuth, async(req, res) => {
   const {order_id} = req.body
+  let db;
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'UPDATE Orders SET order_status = "delivered" WHERE order_id = ?';
     db.query(sql, [order_id], (err, result) => {
@@ -1791,6 +1998,12 @@ app.post('/admindeliverorder', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
@@ -1870,6 +2083,10 @@ app.post('/updateproduct', async (req, res) => {
     } catch (error) {
       console.log(error);
       res.status(500).json({ message: "Server error" });
+    } finally {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
     }
   });
 });
@@ -1880,8 +2097,9 @@ app.post('/forgotpassword', async (req, res) => {
   if (!email) {
     return res.status(400).json({ message: 'Email is required' });
   }
+  let db
   try {
-    let db = await createConnection();
+    db = await createConnection();
     const [user] = await db.promise().query('SELECT * FROM Users WHERE email = ?', [email]);
     if (user.length === 0) {
       return res.status(404).json({ message: 'User not found' });
@@ -1892,13 +2110,19 @@ app.post('/forgotpassword', async (req, res) => {
   catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 
 })
 
 app.post('/resetpassword/:token',async(req,res)=>{
   const { token } = req.params;
-
+  let db
   try {
     jwt.verify(token, process.env.JWT_SECRET, async(err, decoded) =>{
       if (err) {
@@ -1916,13 +2140,20 @@ app.post('/resetpassword/:token',async(req,res)=>{
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "Server error" });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 })
 
 app.post('/addmembership', verifyAdminAuth, async(req, res) => {
   const {membership_id} = req.body
+  let db
   try {
-    let db = await createConnection();
+    db = await createConnection();
 
     const sql = 'INSERT INTO UserMembershipMapping (customer_id, membership_id) VALUES (?, ?)';
     db.query(sql, [req.user.id, membership_id], (err, result) => {
@@ -1935,6 +2166,12 @@ app.post('/addmembership', verifyAdminAuth, async(req, res) => {
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 }) 
 

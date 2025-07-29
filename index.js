@@ -14,7 +14,8 @@ const paypal = require('@paypal/checkout-server-sdk');
 const { clear } = require('console');
 const Mail = require('./mail');
 const jwt = require('jsonwebtoken');
-const paymentRoutes = require('./routes/paymentRoutes')
+const paymentRoutes = require('./routes/paymentRoutes');
+const { verify } = require('crypto');
 
 
 dotenv.config()
@@ -1765,7 +1766,7 @@ app.get('/getallmemberships', async(req, res) => {
   try {
     db = await createConnection();
 
-    const sql = 'SELECT * from Memberships';
+    const sql = 'SELECT * from Memberships WHERE active = 1';
     db.query(sql, (err, result) => {
       if (err) {
         console.error('Error getting memberships', err);
@@ -1784,6 +1785,156 @@ app.get('/getallmemberships', async(req, res) => {
     }
   }
 })
+
+app.post('/addnewmembership', verifyAdminAuth, async(req, res) => {
+  let db;
+
+  try{
+    db = await createConnection();
+    const membership = req.body
+    if (
+      !membership ||
+      typeof membership.name !== 'string' ||
+      typeof membership.price !== 'number' ||
+      typeof membership.description !== 'string' ||
+      (membership.discount !== undefined &&
+       typeof membership.discount !== 'number')
+    ) {
+      return res.status(400).json({ message: 'Invalid membership payload' });
+    }
+
+    const sql = `
+      INSERT INTO Memberships
+        (name, price, description, discount)
+      VALUES (?, ?, ?, ?)
+    `;
+    const params = [
+      membership.name,
+      membership.price,
+      membership.description,
+      membership.discount ?? null
+    ];
+
+    db.query(sql, params, (err, result) => {
+      if (err) {
+        console.error('Error inserting membership:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({
+        message: 'Membership added successfully!',
+        membershipId: result.insertId
+      });
+    });
+
+  } catch {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
+  }
+})
+
+app.patch('/membership/:id', verifyAdminAuth, async (req, res) => {
+  const membershipId = Number(req.params.id);
+  if (!membershipId) {
+    return res.status(400).json({ message: 'Invalid membership ID' });
+  }
+
+  let db;
+  try {
+    db = await createConnection();
+    const sql = `
+      UPDATE Memberships
+         SET active = 0
+       WHERE id = ?
+         AND active = 1
+    `;
+    db.query(sql, [membershipId], (err, result) => {
+      if (err) {
+        console.error('Error deleting membership:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ message: 'Membership not found or already deleted' });
+      }
+      res.json({ message: 'Membership deleted (soft)' })
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) db.end();
+  }
+});
+
+app.put('/membership/:id', verifyAdminAuth, async (req, res) => {
+  let db;
+  try {
+    const membershipId = Number(req.params.id);
+    if (!membershipId) {
+      return res.status(400).json({ message: 'Invalid membership ID' });
+    }
+
+    const { name, description, discount, price } = req.body;
+
+    // Basic validation
+    if (
+      typeof name !== 'string' ||
+      typeof description !== 'string' ||
+      (discount !== undefined && typeof discount !== 'number') ||
+      typeof price !== 'number'
+    ) {
+      return res.status(400).json({ message: 'Invalid membership payload' });
+    }
+
+    db = await createConnection();
+
+    const sql = `
+      UPDATE Memberships
+         SET name        = ?,
+             description = ?,
+             discount    = ?,
+             price       = ?
+       WHERE id    = ?
+         AND active = 1
+    `;
+    const params = [
+      name.trim(),
+      description.trim(),
+      discount ?? null,
+      price,
+      membershipId
+    ];
+
+    db.query(sql, params, (err, result) => {
+      if (err) {
+        console.error('Error updating membership:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      if (result.affectedRows === 0) {
+        return res
+          .status(404)
+          .json({ message: 'Membership not found or already deleted' });
+      }
+      res.json({ message: 'Membership updated successfully' });
+    });
+
+  } catch (error) {
+    console.error('Server error in /membership/:id PUT:', error);
+    res.status(500).json({ message: 'Server error' });
+
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
+  }
+});
 
 app.get("/admingetorders", verifyAdminAuth, async(req, res) => {
   let db;
@@ -2175,6 +2326,34 @@ app.post('/addmembership', verifyAdminAuth, async(req, res) => {
   }
 }) 
 
+app.post('/addnewmembership', verifyAdminAuth, async(req, res)=>{
+  
+  let db;
+
+  try{
+    db = await createConnection();
+
+    const {membership_name, membership_discount, membership_price} = req.body;
+
+    const sql = 'INSERT INTO Memberships (membershipName, membershipDiscount, membershipPrice) VALUES (?, ?, ?)';
+    db.query(sql, [membership_name, membership_discount, membership_price], (err, result) => {
+      if (err) {
+        console.error('Error inserting new membership:', err);
+        return res.status(500).json({ message: 'Database error' });
+      }
+      res.status(201).json({ message: 'New membership added successfully!' });
+    });
+  } catch(error) {
+    console.log(error)
+    res.status(500).json({ message: 'Server error' });
+  } finally{
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
+  }
+})
 
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {

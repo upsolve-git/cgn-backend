@@ -69,10 +69,11 @@ app.get("/getadminauth", verifyAdminAuth, (req, res) => {
 app.post('/signup', async (req, res) => {
   const { firstName, lastName, phone, email, password, accType, countryCode} = req.body;
   console.log(req.body)
+  let db;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    let db = await createConnection();
+    db = await createConnection();
     const sql = 'INSERT INTO Users (email, password, first_name, last_name, phone, account_type, country_code) VALUES (?, ?, ?, ?, ?, ?, ?)';
     db.query(sql, [email, hashedPassword, firstName, lastName, phone, accType, countryCode], (err, result) => {
       if (err) {
@@ -81,12 +82,15 @@ app.post('/signup', async (req, res) => {
       }
       res.status(201).json({ message: 'User registered successfully!' });
     });
-    db.end(err => {
-      if (err) console.error('Error closing connection', err);
-    });
   } catch (error) {
     console.log(error)
     res.status(500).json({ message: 'Server error' });
+  } finally {
+    if (db) {
+      db.end(err => {
+        if (err) console.error('Error closing connection', err);
+      });
+    }
   }
 });
 

@@ -2359,6 +2359,94 @@ app.post('/addnewmembership', verifyAdminAuth, async(req, res)=>{
   }
 })
 
+app.get("/salons", async (req, res) => {
+  const db    = await createConnection();
+  const query = util.promisify(db.query).bind(db);
+  try {
+    const salons = await query("SELECT * FROM Salons");
+    res.json(salons);
+  } catch (err) {
+    console.error("fetch salons:", err);
+    res.status(500).json({ message: "Unable to fetch salons" });
+  } finally {
+    db.end();
+  }
+});
+
+app.post("/salons", async (req, res) => {
+  const { name, email, contact, address } = req.body;
+  if (!name || !email || !contact || !address) {
+    return res.status(400).json({ message: "All fields are required" });
+  }
+
+  const db    = await createConnection();
+  const query = util.promisify(db.query).bind(db);
+  try {
+    const result = await query(
+      "INSERT INTO Salons (name,email,contact,address) VALUES (?,?,?,?)",
+      [name, email, contact, address]
+    );
+    res.status(201).json({ id: result.insertId });
+  } catch (err) {
+    console.error("create salon:", err);
+    res.status(500).json({ message: "Error creating salon" });
+  } finally {
+    db.end();
+  }
+});
+
+app.put("/salons/:id", async (req, res) => {
+  const { id } = req.params;
+  const updates = [];
+  const values  = [];
+  ["name","email","contact","address"].forEach((field) => {
+    if (req.body[field]) {
+      updates.push(`${field} = ?`);
+      values.push(req.body[field]);
+    }
+  });
+  if (!updates.length) {
+    return res.status(400).json({ message: "No fields to update" });
+  }
+  values.push(id);
+
+  const db    = await createConnection();
+  const query = util.promisify(db.query).bind(db);
+  try {
+    const result = await query(
+      `UPDATE Salons SET ${updates.join(", ")} WHERE id = ?`,
+      values
+    );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Salon not found" });
+    }
+    res.json({ message: "Updated successfully" });
+  } catch (err) {
+    console.error("update salon:", err);
+    res.status(500).json({ message: "Error updating salon" });
+  } finally {
+    db.end();
+  }
+});
+
+app.delete("/salons/:id", async (req, res) => {
+  const { id } = req.params;
+  const db    = await createConnection();
+  const query = util.promisify(db.query).bind(db);
+  try {
+    const result = await query("DELETE FROM Salons WHERE id = ?", [id]);
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: "Salon not found" });
+    }
+    res.json({ message: "Deleted successfully" });
+  } catch (err) {
+    console.error("delete salon:", err);
+    res.status(500).json({ message: "Error deleting salon" });
+  } finally {
+    db.end();
+  }
+});
+
 const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

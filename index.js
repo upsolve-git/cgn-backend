@@ -1584,9 +1584,9 @@ LEFT JOIN
     ProductImages pi ON p.product_id = pi.product_id
 LEFT JOIN 
     Colors c ON ol.color_id = c.color_id
-JOIN 
+LEFT JOIN 
     ProductCategoryMappings pcat ON p.product_id = pcat.product_id  -- Join to map products to categories
-JOIN 
+LEFT JOIN 
     Categories cat ON pcat.category_id = cat.category_id  -- Join to get category names
 WHERE 
     o.order_id = ?
